@@ -4,3 +4,7 @@ compatibility_date = "2024-01-18"
 
 [vars]
 SQUARE_LOCATION = "LDQSQ4YZX7YS0"
+
+[[kv_namespaces]]
+binding = "CCN_KV"
+id = "2bd4d308dbd14d2b97fdb3f92835552f"
