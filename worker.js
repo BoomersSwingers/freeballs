@@ -1,7 +1,9 @@
 /**
- * CCN Freeballs Worker — Pre-activated GAN queue approach
- * KV binding name: CCN_KV (namespace ID: 2bd4d308dbd14d2b97fdb3f92835552f)
- * Uses Resend for transactional email to claimant
+ * CCN Freeballs Worker v2
+ * - Resend for claimant email (live delivery)
+ * - Live counter via /stats endpoint
+ * - Fixed QR code (\s not s)
+ * - KV binding: CCN_KV
  */
 
 const SQUARE = "https://connect.squareup.com/v2";
@@ -11,43 +13,17 @@ const SPONSORS = {
     name: "Boomers & Swingers",
     expiry: "Expires midnight 9 Apr 2026",
     amount: "£6.50",
+    total: 16,
     gans: [
-      "7783326544467258",
-      "7783323839157165",
-      "7783325804455607",
-      "7783325970015755",
-      "7783323605018625",
-      "7783329528774574",
-      "7783329729332347",
-      "7783320758309298",
-      "7783329403249551",
-      "7783328061743970",
-      "7783325054073787",
-      "7783323981410859",
-      "7783320279257000",
-      "7783325891467432",
-      "7783328364347073",
-      "7783326554192366"
+      "7783326544467258","7783323839157165","7783325804455607","7783325970015755",
+      "7783323605018625","7783329528774574","7783329729332347","7783320758309298",
+      "7783329403249551","7783328061743970","7783325054073787","7783323981410859",
+      "7783320279257000","7783325891467432","7783328364347073","7783326554192366"
     ]
   },
-  "gildrew": {
-    name: "Gildrew",
-    expiry: "Valid until 31 Dec 2026",
-    amount: "£6.50",
-    gans: []
-  },
-  "adl-scaffold": {
-    name: "ADL Scaffold",
-    expiry: "Valid until 31 Mar 2027",
-    amount: "£6.50",
-    gans: []
-  },
-  "honest-fuel": {
-    name: "Honest Fuel",
-    expiry: "Valid until 30 Apr 2027",
-    amount: "£6.50",
-    gans: []
-  }
+  "gildrew":      { name:"Gildrew",      expiry:"Valid until 31 Dec 2026", amount:"£6.50", total:60, gans:[] },
+  "adl-scaffold": { name:"ADL Scaffold", expiry:"Valid until 31 Mar 2027", amount:"£6.50", total:60, gans:[] },
+  "honest-fuel":  { name:"Honest Fuel",  expiry:"Valid until 30 Apr 2027", amount:"£6.50", total:60, gans:[] }
 };
 
 export default {
@@ -55,6 +31,7 @@ export default {
     try {
       const url = new URL(request.url);
       if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders() });
+      if (request.method === "GET" && url.pathname === "/stats") return await handleStats(request, env);
       if (request.method === "POST" && url.pathname === "/api") return await handleAPI(request, env);
       if (request.method === "GET") return new Response(getHTML(), { headers: { "Content-Type": "text/html;charset=UTF-8" } });
       return jsonResponse({ error: "Not found" }, 404);
@@ -63,6 +40,19 @@ export default {
     }
   }
 };
+
+async function handleStats(request, env) {
+  const url = new URL(request.url);
+  const slug = url.searchParams.get("s");
+  if (!slug || !SPONSORS[slug]) return jsonResponse({ error: "Unknown sponsor" }, 400);
+  const sponsor = SPONSORS[slug];
+  let claimed = 0;
+  try {
+    const val = await env.CCN_KV.get("claimed:" + slug);
+    claimed = val ? parseInt(val) : 0;
+  } catch {}
+  return jsonResponse({ claimed, available: sponsor.total - claimed, total: sponsor.total });
+}
 
 async function handleAPI(request, env) {
   if (!env.SQUARE_TOKEN) return jsonResponse({ error: "SQUARE_TOKEN not configured" }, 500);
@@ -106,31 +96,23 @@ async function handleAPI(request, env) {
   const donor = sponsorName || sponsor.name;
   const expiryTxt = expiry || sponsor.expiry;
 
-  // Create or find Square customer
+  // Square customer
   let customerId;
   try {
     customerId = await findOrCreateCustomer(token, { firstName, lastName, email, phone, postcode, slug, ref });
-  } catch (err) {
-    console.warn("Customer step failed (non-fatal):", err.message);
-  }
+  } catch (err) { console.warn("Customer (non-fatal):", err.message); }
 
-  // Link gift card to customer
   if (customerId) {
     try {
       await sq(token, "POST", "/gift-cards/link-customer", { customer_id: customerId, gift_card_gan: gan });
-    } catch (err) {
-      console.warn("Gift card link failed (non-fatal):", err.message);
-    }
+    } catch (err) { console.warn("Link (non-fatal):", err.message); }
   }
 
-  // Send email via Resend
+  // Email claimant via Resend
   try {
-    await fetch("https://api.resend.com/emails", {
+    const emailRes = await fetch("https://api.resend.com/emails", {
       method: "POST",
-      headers: {
-        "Authorization": "Bearer " + env.RESEND_API_KEY,
-        "Content-Type": "application/json"
-      },
+      headers: { "Authorization": "Bearer " + env.RESEND_API_KEY, "Content-Type": "application/json" },
       body: JSON.stringify({
         from: "Boomers & Swingers <onboarding@resend.dev>",
         to: [email],
@@ -159,9 +141,11 @@ async function handleAPI(request, env) {
         ].join("\n")
       })
     });
-  } catch (err) {
-    console.warn("Email failed (non-fatal):", err.message);
-  }
+    if (!emailRes.ok) {
+      const errText = await emailRes.text();
+      console.warn("Resend error:", errText);
+    }
+  } catch (err) { console.warn("Email (non-fatal):", err.message); }
 
   return jsonResponse({ success: true, gan: fmtGAN, reference: ref, customerId: customerId || null, balance: sponsor.amount });
 }
@@ -171,12 +155,12 @@ async function findOrCreateCustomer(token, { firstName, lastName, email, phone, 
     query: { filter: { email_address: { exact: email } } }
   });
   if (search.customers?.length > 0) {
-    const existing = search.customers[0];
-    await sq(token, "PUT", `/customers/${existing.id}`, {
+    const e = search.customers[0];
+    await sq(token, "PUT", `/customers/${e.id}`, {
       given_name: firstName, family_name: lastName, phone_number: phone,
-      note: `CCN · ${slug} · ${ref} · ${new Date().toISOString().slice(0, 10)}`
+      note: `CCN · ${slug} · ${ref} · ${new Date().toISOString().slice(0,10)}`
     });
-    return existing.id;
+    return e.id;
   }
   const created = await sq(token, "POST", "/customers", {
     idempotency_key: ref + "-customer",
@@ -184,7 +168,7 @@ async function findOrCreateCustomer(token, { firstName, lastName, email, phone, 
     email_address: email, phone_number: phone,
     address: { postal_code: postcode, country: "GB" },
     reference_id: ref,
-    note: `CCN claimant · ${slug} · ${new Date().toISOString().slice(0, 10)}`
+    note: `CCN claimant · ${slug} · ${new Date().toISOString().slice(0,10)}`
   });
   if (!created.customer) throw new Error("Customer creation returned no customer");
   return created.customer.id;
@@ -198,8 +182,8 @@ async function sq(token, method, path, body) {
   });
   const text = await res.text();
   let data;
-  try { data = JSON.parse(text); } catch { throw new Error(`Square non-JSON (${res.status}): ${text.slice(0, 200)}`); }
-  if (!res.ok) { throw new Error(data.errors ? JSON.stringify(data.errors) : `HTTP ${res.status}`); }
+  try { data = JSON.parse(text); } catch { throw new Error(`Square non-JSON (${res.status}): ${text.slice(0,200)}`); }
+  if (!res.ok) throw new Error(data.errors ? JSON.stringify(data.errors) : `HTTP ${res.status}`);
   return data;
 }
 
@@ -306,7 +290,7 @@ input::placeholder{color:var(--muted)}
     <div class="cb" style="padding:8px 18px">
       <ul class="steps">
         <li class="step"><div class="sn">1</div><div><b>Fill in your details</b><span>60 seconds — name, email &amp; mobile</span></div></li>
-        <li class="step"><div class="sn">2</div><div><b>Get your unique gift card</b><span>QR code &amp; number sent to your inbox instantly</span></div></li>
+        <li class="step"><div class="sn">2</div><div><b>Get your unique gift card</b><span>QR code &amp; number emailed instantly</span></div></li>
         <li class="step"><div class="sn">3</div><div><b>Turn up &amp; play</b><span>Show QR code or gift card number to staff</span></div></li>
       </ul>
     </div>
@@ -371,27 +355,35 @@ input::placeholder{color:var(--muted)}
 </div>
 <script>
 const SP={
-  "tylersmithgolf":{n:"Boomers & Swingers",b:"Tyler Smith Golf × B&S Drop",h:"DROP",s:"50 free balls · for @tylersmithgolf_ followers · Astley",st:'Gifted by <b>Boomers &amp; Swingers</b> for @tylersmithgolf_ followers.',e:"Expires midnight 9 Apr 2026",m:16,r:0,d:3,fh:"🎁 For @tylersmithgolf_ followers",c2:"<b>B&S offers</b> — happy to hear about future sessions."},
-  "gildrew":{n:"Gildrew",b:"Community Champion · Gildrew",h:"SESSION",s:"50 free balls · Donated by Gildrew · Astley",st:'Gifted by <b>Gildrew</b> — supporting the local community.',e:"Valid until 31 Dec 2026",m:60,r:34,d:269,fh:"🎁 Gifted by Gildrew",c2:"<b>Gildrew offers</b> — happy to share my details with Gildrew."},
-  "adl-scaffold":{n:"ADL Scaffold",b:"Community Champion · ADL Scaffold",h:"SESSION",s:"50 free balls · Donated by ADL Scaffold · Astley",st:'Gifted by <b>ADL Scaffold</b>.',e:"Valid until 31 Mar 2027",m:60,r:12,d:359,fh:"🎁 Gifted by ADL Scaffold",c2:"<b>ADL Scaffold offers</b> — happy to share my details with ADL Scaffold."},
-  "honest-fuel":{n:"Honest Fuel",b:"Community Champion · Honest Fuel",h:"SESSION",s:"50 free balls · Donated by Honest Fuel · Astley",st:'Gifted by <b>Honest Fuel</b>.',e:"Valid until 30 Apr 2027",m:60,r:8,d:389,fh:"🎁 Gifted by Honest Fuel",c2:"<b>Honest Fuel offers</b> — happy to share my details with Honest Fuel."}
+  "tylersmithgolf":{n:"Boomers & Swingers",b:"Tyler Smith Golf × B&S Drop",h:"DROP",s:"50 free balls · for @tylersmithgolf_ followers · Astley",st:'Gifted by <b>Boomers &amp; Swingers</b> for @tylersmithgolf_ followers.',e:"Expires midnight 9 Apr 2026",d:3,fh:"🎁 For @tylersmithgolf_ followers",c2:"<b>B&S offers</b> — happy to hear about future sessions."},
+  "gildrew":{n:"Gildrew",b:"Community Champion · Gildrew",h:"SESSION",s:"50 free balls · Donated by Gildrew · Astley",st:'Gifted by <b>Gildrew</b> — supporting the local community.',e:"Valid until 31 Dec 2026",d:269,fh:"🎁 Gifted by Gildrew",c2:"<b>Gildrew offers</b> — happy to share my details with Gildrew."},
+  "adl-scaffold":{n:"ADL Scaffold",b:"Community Champion · ADL Scaffold",h:"SESSION",s:"50 free balls · Donated by ADL Scaffold · Astley",st:'Gifted by <b>ADL Scaffold</b>.',e:"Valid until 31 Mar 2027",d:359,fh:"🎁 Gifted by ADL Scaffold",c2:"<b>ADL Scaffold offers</b> — happy to share my details with ADL Scaffold."},
+  "honest-fuel":{n:"Honest Fuel",b:"Community Champion · Honest Fuel",h:"SESSION",s:"50 free balls · Donated by Honest Fuel · Astley",st:'Gifted by <b>Honest Fuel</b>.',e:"Valid until 30 Apr 2027",d:389,fh:"🎁 Gifted by Honest Fuel",c2:"<b>Honest Fuel offers</b> — happy to share my details with Honest Fuel."}
 };
 const slug=new URLSearchParams(location.search).get("s")||"";
 const sp=SP[slug];
-window.addEventListener("DOMContentLoaded",()=>{
+window.addEventListener("DOMContentLoaded",async()=>{
   if(!sp){document.querySelector(".wrap").innerHTML='<div style="text-align:center;padding:80px 20px"><h1 style="font-family:Bebas Neue,sans-serif;color:var(--green);font-size:48px">⛳</h1><p style="color:var(--muted);margin-top:12px">Visit <a href="https://www.boomersandswingers.golf" style="color:var(--green)">boomersandswingers.golf</a> for your sponsor link.</p></div>';return;}
   document.title="Free Session — "+sp.n;
   document.getElementById("bt").textContent=sp.b;
   document.getElementById("ha").textContent=sp.h;
   document.getElementById("hs").textContent=sp.s;
   document.getElementById("st").innerHTML=sp.st;
-  document.getElementById("sr").textContent=sp.r;
-  document.getElementById("sm").textContent=sp.m-sp.r;
   document.getElementById("sd").textContent=sp.d;
   document.getElementById("en").textContent=sp.e+" · One per person · Astley";
   document.getElementById("fh").textContent=sp.fh;
   document.getElementById("c2l").innerHTML=sp.c2;
   document.getElementById("cs").textContent=sp.n;
+  // Live counter from KV
+  try{
+    const r=await fetch("/stats?s="+slug);
+    const d=await r.json();
+    document.getElementById("sr").textContent=d.claimed;
+    document.getElementById("sm").textContent=d.available;
+  }catch{
+    document.getElementById("sr").textContent="?";
+    document.getElementById("sm").textContent="?";
+  }
 });
 function go(n){
   document.getElementById("s1").style.display=n===1?"":"none";
