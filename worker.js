@@ -1,6 +1,7 @@
 /**
  * CCN Freeballs Worker — Pre-activated GAN queue approach
  * KV binding name: CCN_KV (namespace ID: 2bd4d308dbd14d2b97fdb3f92835552f)
+ * Uses Resend for transactional email to claimant
  */
 
 const SQUARE = "https://connect.squareup.com/v2";
@@ -65,7 +66,7 @@ export default {
 
 async function handleAPI(request, env) {
   if (!env.SQUARE_TOKEN) return jsonResponse({ error: "SQUARE_TOKEN not configured" }, 500);
-  if (!env.WEB3FORMS_KEY) return jsonResponse({ error: "WEB3FORMS_KEY not configured" }, 500);
+  if (!env.RESEND_API_KEY) return jsonResponse({ error: "RESEND_API_KEY not configured" }, 500);
   if (!env.CCN_KV) return jsonResponse({ error: "CCN_KV binding not configured" }, 500);
 
   let body;
@@ -102,7 +103,10 @@ async function handleAPI(request, env) {
 
   const fmtGAN = gan.replace(/(\d{4})(?=\d)/g, "$1 ");
   const token = env.SQUARE_TOKEN;
+  const donor = sponsorName || sponsor.name;
+  const expiryTxt = expiry || sponsor.expiry;
 
+  // Create or find Square customer
   let customerId;
   try {
     customerId = await findOrCreateCustomer(token, { firstName, lastName, email, phone, postcode, slug, ref });
@@ -110,6 +114,7 @@ async function handleAPI(request, env) {
     console.warn("Customer step failed (non-fatal):", err.message);
   }
 
+  // Link gift card to customer
   if (customerId) {
     try {
       await sq(token, "POST", "/gift-cards/link-customer", { customer_id: customerId, gift_card_gan: gan });
@@ -118,37 +123,40 @@ async function handleAPI(request, env) {
     }
   }
 
-  const donor = sponsorName || sponsor.name;
-  const expiryTxt = expiry || sponsor.expiry;
+  // Send email via Resend
   try {
-    await fetch("https://api.web3forms.com/submit", {
+    await fetch("https://api.resend.com/emails", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Authorization": "Bearer " + env.RESEND_API_KEY,
+        "Content-Type": "application/json"
+      },
       body: JSON.stringify({
-        access_key: env.WEB3FORMS_KEY,
-        from_name: "Boomers & Swingers",
-        to: email,
-        name: `${firstName} ${lastName}`,
-        subject: "Your free session — Boomers & Swingers",
-        message: [
-          "Session confirmed!",
+        from: "Boomers & Swingers <onboarding@resend.dev>",
+        to: [email],
+        cc: ["nick@boomersandswingers.golf"],
+        subject: "Your free session — Boomers & Swingers ⛳",
+        text: [
+          `Hi ${firstName},`,
+          "",
+          "Your free 50-ball session is confirmed!",
           "",
           `Square gift card: ${fmtGAN}`,
           `Balance: ${sponsor.amount}`,
           `Reference: ${ref}`,
           expiryTxt,
           "",
-          "Venue: Manchester Rd, Astley M29 7EJ",
-          "Show gift card number (or QR code) to staff at the till.",
+          "📍 Manchester Rd, Astley M29 7EJ",
+          "🕐 Mon–Fri 1–9pm | Sat–Sun 10am–5pm",
+          "⛳ Show your gift card number (or QR code from the website) to staff at the till.",
           "No booking needed.",
           "",
-          `Donated by ${donor}`
-        ].join("\n"),
-        mobile: phone, postcode, reference: ref, gift_card: gan,
-        source: slug || "ccn",
-        planned_visit: plannedVisit || "",
-        bs_consent: bsConsent ? "yes" : "no",
-        sponsor_consent: sponsorConsent ? "yes" : "no"
+          `Donated by ${donor}`,
+          "",
+          "See you on the range!",
+          "Boomers & Swingers",
+          "boomersandswingers.golf"
+        ].join("\n")
       })
     });
   } catch (err) {
