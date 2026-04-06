@@ -103,7 +103,7 @@ async function handleAPI(request, env) {
         gift_card_activity: {
           type: "ACTIVATE",
           location_id: locationId,
-          gift_card_gan: gan,
+          gift_card_gan: gcId,
           activate_activity_details: {
             amount_money: { amount, currency: "GBP" },
             buyer_payment_instrument_ids: ["complimentary-bsg-" + ref.toLowerCase()],
