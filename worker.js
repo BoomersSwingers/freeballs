@@ -1,47 +1,39 @@
 /**
  * CCN Freeballs Worker — Pre-activated GAN queue approach
- * Uses Cloudflare KV (CCN_KV binding) to track claim index per sponsor
- * Pre-activated GANs are stored in the SPONSORS config below
- *
  * KV binding name: CCN_KV (namespace ID: 2bd4d308dbd14d2b97fdb3f92835552f)
- * Add this binding in Cloudflare: Workers → freeballs → Settings → Variables → KV Namespace Bindings
- *   Variable name: CCN_KV
- *   Namespace: ccn-gift-cards
  */
 
 const SQUARE = "https://connect.squareup.com/v2";
 
-// Pre-activated gift card GANs per sponsor
-// Each GAN is a real Square gift card with £6.50 balance, ready to use
 const SPONSORS = {
   "tylersmithgolf": {
     name: "Boomers & Swingers",
     expiry: "Expires midnight 9 Apr 2026",
     amount: "£6.50",
     gans: [
-  "7783326544467258",
-  "7783323839157165",
-  "7783325804455607",
-  "7783325970015755",
-  "7783323605018625",
-  "7783329528774574",
-  "7783329729332347",
-  "7783320758309298",
-  "7783329403249551",
-  "7783328061743970",
-  "7783325054073787",
-  "7783323981410859",
-  "7783320279257000",
-  "7783325891467432",
-  "7783328364347073",
-  "7783326554192366"
-]
+      "7783326544467258",
+      "7783323839157165",
+      "7783325804455607",
+      "7783325970015755",
+      "7783323605018625",
+      "7783329528774574",
+      "7783329729332347",
+      "7783320758309298",
+      "7783329403249551",
+      "7783328061743970",
+      "7783325054073787",
+      "7783323981410859",
+      "7783320279257000",
+      "7783325891467432",
+      "7783328364347073",
+      "7783326554192366"
+    ]
   },
   "gildrew": {
     name: "Gildrew",
     expiry: "Valid until 31 Dec 2026",
     amount: "£6.50",
-    gans: [] // Add pre-activated GANs here when ready
+    gans: []
   },
   "adl-scaffold": {
     name: "ADL Scaffold",
@@ -61,21 +53,9 @@ export default {
   async fetch(request, env) {
     try {
       const url = new URL(request.url);
-
-      if (request.method === "OPTIONS") {
-        return new Response(null, { headers: corsHeaders() });
-      }
-
-      if (request.method === "POST" && url.pathname === "/api") {
-        return await handleAPI(request, env);
-      }
-
-      if (request.method === "GET") {
-        return new Response(getHTML(), {
-          headers: { "Content-Type": "text/html;charset=UTF-8" }
-        });
-      }
-
+      if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders() });
+      if (request.method === "POST" && url.pathname === "/api") return await handleAPI(request, env);
+      if (request.method === "GET") return new Response(getHTML(), { headers: { "Content-Type": "text/html;charset=UTF-8" } });
       return jsonResponse({ error: "Not found" }, 404);
     } catch (err) {
       return jsonResponse({ error: "Worker error: " + (err.message || String(err)) }, 500);
@@ -101,9 +81,7 @@ async function handleAPI(request, env) {
           plannedVisit, bsConsent, sponsorConsent,
           slug, reference, sponsorName, expiry } = body;
 
-  if (!firstName || !email || !phone || !postcode) {
-    return jsonResponse({ error: "Missing required fields" }, 400);
-  }
+  if (!firstName || !email || !phone || !postcode) return jsonResponse({ error: "Missing required fields" }, 400);
 
   const sponsor = SPONSORS[slug];
   if (!sponsor) return jsonResponse({ error: "Unknown sponsor: " + slug }, 400);
@@ -111,19 +89,12 @@ async function handleAPI(request, env) {
 
   const ref = reference || ("CCN-" + Math.random().toString(36).slice(2, 8).toUpperCase());
 
-  // Get next available GAN from KV queue
   let gan;
   try {
     const claimedStr = await env.CCN_KV.get("claimed:" + slug);
     const claimed = claimedStr ? parseInt(claimedStr) : 0;
-
-    if (claimed >= sponsor.gans.length) {
-      return jsonResponse({ error: "All sessions for this sponsor have been claimed" }, 400);
-    }
-
+    if (claimed >= sponsor.gans.length) return jsonResponse({ error: "All sessions for this sponsor have been claimed" }, 400);
     gan = sponsor.gans[claimed];
-
-    // Increment claimed counter atomically
     await env.CCN_KV.put("claimed:" + slug, String(claimed + 1));
   } catch (err) {
     return jsonResponse({ error: "Queue error: " + err.message }, 500);
@@ -131,30 +102,22 @@ async function handleAPI(request, env) {
 
   const fmtGAN = gan.replace(/(\d{4})(?=\d)/g, "$1 ");
   const token = env.SQUARE_TOKEN;
-  const locationId = env.SQUARE_LOCATION || "LDQSQ4YZX7YS0";
 
-  // Create or find Square customer
   let customerId;
   try {
     customerId = await findOrCreateCustomer(token, { firstName, lastName, email, phone, postcode, slug, ref });
   } catch (err) {
-    // Non-fatal — log and continue
     console.warn("Customer step failed (non-fatal):", err.message);
   }
 
-  // Link gift card to customer if we have their ID
   if (customerId) {
     try {
-      await sq(token, "POST", "/gift-cards/link-customer", {
-        customer_id: customerId,
-        gift_card_gan: gan
-      });
+      await sq(token, "POST", "/gift-cards/link-customer", { customer_id: customerId, gift_card_gan: gan });
     } catch (err) {
       console.warn("Gift card link failed (non-fatal):", err.message);
     }
   }
 
-  // Send confirmation email
   const donor = sponsorName || sponsor.name;
   const expiryTxt = expiry || sponsor.expiry;
   try {
@@ -176,15 +139,12 @@ async function handleAPI(request, env) {
           expiryTxt,
           "",
           "Venue: Manchester Rd, Astley M29 7EJ",
-          "Show gift card number to staff at the till.",
+          "Show gift card number (or QR code) to staff at the till.",
           "No booking needed.",
           "",
           `Donated by ${donor}`
         ].join("\n"),
-        mobile: phone,
-        postcode,
-        reference: ref,
-        gift_card: gan,
+        mobile: phone, postcode, reference: ref, gift_card: gan,
         source: slug || "ccn",
         planned_visit: plannedVisit || "",
         bs_consent: bsConsent ? "yes" : "no",
@@ -195,42 +155,29 @@ async function handleAPI(request, env) {
     console.warn("Email failed (non-fatal):", err.message);
   }
 
-  return jsonResponse({
-    success: true,
-    gan: fmtGAN,
-    reference: ref,
-    customerId: customerId || null,
-    balance: sponsor.amount
-  });
+  return jsonResponse({ success: true, gan: fmtGAN, reference: ref, customerId: customerId || null, balance: sponsor.amount });
 }
 
 async function findOrCreateCustomer(token, { firstName, lastName, email, phone, postcode, slug, ref }) {
   const search = await sq(token, "POST", "/customers/search", {
     query: { filter: { email_address: { exact: email } } }
   });
-
   if (search.customers?.length > 0) {
     const existing = search.customers[0];
     await sq(token, "PUT", `/customers/${existing.id}`, {
-      given_name: firstName,
-      family_name: lastName,
-      phone_number: phone,
+      given_name: firstName, family_name: lastName, phone_number: phone,
       note: `CCN · ${slug} · ${ref} · ${new Date().toISOString().slice(0, 10)}`
     });
     return existing.id;
   }
-
   const created = await sq(token, "POST", "/customers", {
     idempotency_key: ref + "-customer",
-    given_name: firstName,
-    family_name: lastName,
-    email_address: email,
-    phone_number: phone,
+    given_name: firstName, family_name: lastName,
+    email_address: email, phone_number: phone,
     address: { postal_code: postcode, country: "GB" },
     reference_id: ref,
     note: `CCN claimant · ${slug} · ${new Date().toISOString().slice(0, 10)}`
   });
-
   if (!created.customer) throw new Error("Customer creation returned no customer");
   return created.customer.id;
 }
@@ -238,37 +185,22 @@ async function findOrCreateCustomer(token, { firstName, lastName, email, phone, 
 async function sq(token, method, path, body) {
   const res = await fetch(SQUARE + path, {
     method,
-    headers: {
-      "Authorization": "Bearer " + token,
-      "Content-Type": "application/json",
-      "Square-Version": "2024-01-18"
-    },
+    headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json", "Square-Version": "2024-01-18" },
     body: body ? JSON.stringify(body) : undefined
   });
   const text = await res.text();
   let data;
-  try { data = JSON.parse(text); }
-  catch { throw new Error(`Square non-JSON (${res.status}): ${text.slice(0, 200)}`); }
-  if (!res.ok) {
-    const msg = data.errors ? JSON.stringify(data.errors) : `HTTP ${res.status}`;
-    throw new Error(msg);
-  }
+  try { data = JSON.parse(text); } catch { throw new Error(`Square non-JSON (${res.status}): ${text.slice(0, 200)}`); }
+  if (!res.ok) { throw new Error(data.errors ? JSON.stringify(data.errors) : `HTTP ${res.status}`); }
   return data;
 }
 
 function corsHeaders() {
-  return {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type"
-  };
+  return { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST, GET, OPTIONS", "Access-Control-Allow-Headers": "Content-Type" };
 }
 
 function jsonResponse(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json", ...corsHeaders() }
-  });
+  return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json", ...corsHeaders() } });
 }
 
 function getHTML() {
@@ -280,6 +212,7 @@ function getHTML() {
 <title>Free Golf Session — Boomers &amp; Swingers</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{--green:#4ADE80;--dark:#070d07;--card:#111c11;--border:rgba(74,222,128,.18);--text:#e8f5e8;--muted:#6b7a6b}
@@ -331,8 +264,10 @@ input::placeholder{color:var(--muted)}
 .ck label{font-size:12px;color:var(--muted);line-height:1.5;text-transform:none;letter-spacing:0;font-weight:400;cursor:pointer}
 .ck label b{color:var(--text);font-weight:600}
 .gan{background:rgba(74,222,128,.06);border:1px solid var(--border);border-radius:14px;padding:24px;text-align:center;margin-bottom:14px}
-.gl{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
-.gn{font-family:'JetBrains Mono',monospace;font-size:clamp(20px,6vw,28px);font-weight:700;color:var(--green);letter-spacing:.12em;margin-bottom:6px}
+.gl{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:12px}
+#qr{margin:0 auto 14px;width:160px;height:160px;background:#fff;padding:8px;border-radius:10px;display:flex;align-items:center;justify-content:center}
+#qr canvas,#qr img{display:block}
+.gn{font-family:'JetBrains Mono',monospace;font-size:clamp(18px,5vw,24px);font-weight:700;color:var(--green);letter-spacing:.12em;margin-bottom:6px}
 .gs{font-size:11px;color:var(--muted)}
 .vbox{background:rgba(74,222,128,.04);border:1px solid var(--border);border-radius:12px;padding:14px;font-size:12px;color:var(--muted);line-height:1.9}
 .foot{text-align:center;padding-top:20px;font-size:11px;color:var(--muted)}
@@ -363,8 +298,8 @@ input::placeholder{color:var(--muted)}
     <div class="cb" style="padding:8px 18px">
       <ul class="steps">
         <li class="step"><div class="sn">1</div><div><b>Fill in your details</b><span>60 seconds — name, email &amp; mobile</span></div></li>
-        <li class="step"><div class="sn">2</div><div><b>Get your unique gift card</b><span>Sent to your inbox instantly</span></div></li>
-        <li class="step"><div class="sn">3</div><div><b>Turn up &amp; play</b><span>Show gift card number to staff at the till</span></div></li>
+        <li class="step"><div class="sn">2</div><div><b>Get your unique gift card</b><span>QR code &amp; number sent to your inbox instantly</span></div></li>
+        <li class="step"><div class="sn">3</div><div><b>Turn up &amp; play</b><span>Show QR code or gift card number to staff</span></div></li>
       </ul>
     </div>
   </div>
@@ -408,7 +343,12 @@ input::placeholder{color:var(--muted)}
     <h1 style="font-size:clamp(40px,11vw,64px)">YOU'RE<span>IN!</span></h1>
     <p class="sub">Your Square gift card has been sent to your inbox.</p>
   </div>
-  <div class="gan"><div class="gl">Your Square gift card</div><div id="qr" style="margin:0 auto 12px;width:160px;height:160px;background:#fff;padding:8px;border-radius:10px"></div><div class="gn" id="gd">---- ---- ---- ----</div><div class="gs" id="ge">Single use · Show QR or number to staff</div></div>
+  <div class="gan">
+    <div class="gl">Your Square gift card — scan or show number to staff</div>
+    <div id="qr"></div>
+    <div class="gn" id="gd">---- ---- ---- ----</div>
+    <div class="gs" id="ge">Single use · Show QR or number to staff at the range</div>
+  </div>
   <div class="card">
     <div class="ch">📋 Summary</div>
     <div class="cb" style="font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:10px">
@@ -417,7 +357,7 @@ input::placeholder{color:var(--muted)}
       <div style="display:flex;justify-content:space-between"><span>Balance</span><b style="color:var(--green)">£6.50</b></div>
     </div>
   </div>
-  <div class="vbox">📍 Manchester Rd, Astley M29 7EJ<br>📱 Show gift card number to staff at the till<br>🕐 Mon–Fri 1–9pm | Sat–Sun 10am–5pm<br>⭐ No booking needed</div>
+  <div class="vbox">📍 Manchester Rd, Astley M29 7EJ<br>📱 Show QR code or gift card number to staff<br>🕐 Mon–Fri 1–9pm | Sat–Sun 10am–5pm<br>⭐ No booking needed</div>
   <div style="margin-top:14px" class="foot"><a href="https://www.boomersandswingers.golf" target="_blank">boomersandswingers.golf</a></div>
 </div>
 </div>
@@ -467,6 +407,9 @@ async function sub(){
     let data;
     try{data=await res.json();}catch{throw new Error("Server returned an invalid response. Please try again.");}
     if(!res.ok||data.error)throw new Error(data.error||"Something went wrong (HTTP "+res.status+")");
+    const rawGAN=(data.gan||ref).replace(/\s/g,"");
+    document.getElementById("qr").innerHTML="";
+    new QRCode(document.getElementById("qr"),{width:144,height:144,text:rawGAN,colorDark:"#070d07",colorLight:"#ffffff"});
     document.getElementById("gd").textContent=data.gan||ref;
     document.getElementById("ge").textContent=(sp?.e||"")+" · Single use · Show to staff";
     document.getElementById("cr").textContent=data.reference||ref;
