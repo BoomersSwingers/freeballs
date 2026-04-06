@@ -96,6 +96,7 @@ async function handleAPI(request, env) {
     }
 
     // Step 3: Activate gift card
+    await new Promise(r => setTimeout(r, 1500));
     try {
       await sq(token, "POST", "/gift-card-activities", {
         idempotency_key: ref + "-act",
