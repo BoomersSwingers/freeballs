@@ -408,7 +408,7 @@ input::placeholder{color:var(--muted)}
     <h1 style="font-size:clamp(40px,11vw,64px)">YOU'RE<span>IN!</span></h1>
     <p class="sub">Your Square gift card has been sent to your inbox.</p>
   </div>
-  <div class="gan"><div class="gl">Your Square gift card number</div><div class="gn" id="gd">---- ---- ---- ----</div><div class="gs" id="ge">Single use · Show to staff at the range</div></div>
+  <div class="gan"><div class="gl">Your Square gift card</div><div id="qr" style="margin:0 auto 12px;width:160px;height:160px;background:#fff;padding:8px;border-radius:10px"></div><div class="gn" id="gd">---- ---- ---- ----</div><div class="gs" id="ge">Single use · Show QR or number to staff</div></div>
   <div class="card">
     <div class="ch">📋 Summary</div>
     <div class="cb" style="font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:10px">
