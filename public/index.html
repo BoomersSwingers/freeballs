@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Free Golf Session — Boomers &amp; Swingers</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --green:#4ADE80;
+  --dark:#070d07;
+  --mid:#0f1a0f;
+  --card:#111c11;
+  --border:rgba(74,222,128,.18);
+  --text:#e8f5e8;
+  --muted:#6b7a6b;
+  --gold:#F59E0B;
+  --bs-green:#1A5C38;
+}
+
+body{
+  font-family:'DM Sans',sans-serif;
+  background:var(--dark);
+  color:var(--text);
+  min-height:100vh;
+  overflow-x:hidden;
+}
+
+/* ── NOISE TEXTURE ── */
+body::before{
+  content:'';
+  position:fixed;
+  inset:0;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events:none;
+  z-index:0;
+  opacity:.5;
+}
+
+/* ── GRID BG ── */
+body::after{
+  content:'';
+  position:fixed;
+  inset:0;
+  background-image:
+    linear-gradient(rgba(74,222,128,.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(74,222,128,.03) 1px, transparent 1px);
+  background-size:48px 48px;
+  pointer-events:none;
+  z-index:0;
+}
+
+.wrap{
+  position:relative;
+  z-index:1;
+  max-width:520px;
+  margin:0 auto;
+  padding:0 16px 60px;
+}
+
+/* ── HERO ── */
+.hero{
+  padding:48px 0 32px;
+  text-align:center;
+}
+
+.badge{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  background:rgba(74,222,128,.08);
+  border:1px solid var(--border);
+  border-radius:100px;
+  padding:5px 14px 5px 10px;
+  font-size:11px;
+  font-weight:600;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  color:var(--green);
+  margin-bottom:24px;
+}
+
+.badge-dot{
+  width:6px;height:6px;
+  background:var(--green);
+  border-radius:50%;
+  animation:pulse 2s infinite;
+}
+
+@keyframes pulse{
+  0%,100%{opacity:1;transform:scale(1)}
+  50%{opacity:.5;transform:scale(.8)}
+}
+
+.hero h1{
+  font-family:'Bebas Neue',sans-serif;
+  font-size:clamp(52px,14vw,88px);
+  line-height:.95;
+  letter-spacing:.02em;
+  color:#fff;
+  margin-bottom:8px;
+}
+
+.hero h1 span{
+  color:var(--green);
+  display:block;
+}
+
+.hero-sub{
+  font-size:14px;
+  color:var(--muted);
+  font-weight:300;
+  margin-bottom:28px;
+  line-height:1.6;
+}
+
+/* ── STATS BAR ── */
+.stats{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  background:rgba(74,222,128,.04);
+  border:1px solid var(--border);
+  border-radius:14px;
+  overflow:hidden;
+  margin-bottom:28px;
+}
+
+.stat{
+  padding:16px 12px;
+  text-align:center;
+  border-right:1px solid var(--border);
+}
+
+.stat:last-child{border:none}
+
+.stat-n{
+  font-family:'Bebas Neue',sans-serif;
+  font-size:32px;
+  color:#fff;
+  line-height:1;
+  margin-bottom:3px;
+}
+
+.stat-l{
+  font-size:9px;
+  font-weight:600;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+
+/* ── CARD ── */
+.card{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:16px;
+  overflow:hidden;
+  margin-bottom:14px;
+}
+
+.card-head{
+  background:rgba(74,222,128,.06);
+  border-bottom:1px solid var(--border);
+  padding:12px 18px;
+  font-size:11px;
+  font-weight:700;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:var(--green);
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+
+.card-body{padding:18px}
+
+/* ── SESSION CARD ── */
+.session-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+}
+
+.session-info{font-size:13px;color:var(--muted);line-height:1.6}
+.session-info b{color:var(--text);font-weight:600;display:block;margin-bottom:2px}
+
+.free-badge{
+  font-family:'Bebas Neue',sans-serif;
+  font-size:28px;
+  color:var(--green);
+  letter-spacing:.04em;
+  flex-shrink:0;
+}
+
+/* ── STEPS ── */
+.steps{list-style:none;display:flex;flex-direction:column;gap:0}
+
+.step{
+  display:flex;
+  gap:14px;
+  align-items:flex-start;
+  padding:13px 0;
+  border-bottom:1px solid rgba(74,222,128,.08);
+}
+
+.step:last-child{border:none}
+
+.step-n{
+  width:22px;height:22px;
+  background:var(--green);
+  border-radius:50%;
+  color:var(--dark);
+  font-size:11px;
+  font-weight:700;
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;
+  margin-top:1px;
+}
+
+.step b{font-size:13px;font-weight:600;color:var(--text);display:block;margin-bottom:2px}
+.step span{font-size:12px;color:var(--muted)}
+
+/* ── SPONSOR BANNER ── */
+.sponsor-banner{
+  background:rgba(74,222,128,.05);
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:12px 16px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin-bottom:14px;
+  font-size:12px;
+  color:var(--muted);
+  line-height:1.5;
+}
+
+.sponsor-banner b{color:var(--text)}
+
+/* ── CTA ── */
+.cta{
+  width:100%;
+  background:var(--green);
+  color:var(--dark);
+  font-family:'DM Sans',sans-serif;
+  font-size:15px;
+  font-weight:700;
+  padding:16px;
+  border:none;
+  border-radius:100px;
+  cursor:pointer;
+  transition:transform .15s,opacity .15s;
+  letter-spacing:.02em;
+  margin-bottom:8px;
+}
+
+.cta:hover{transform:translateY(-1px);opacity:.92}
+.cta:disabled{background:#2a3a2a;color:var(--muted);cursor:not-allowed;transform:none}
+
+.expiry-note{
+  text-align:center;
+  font-size:11px;
+  color:var(--muted);
+  padding:4px 0;
+}
+
+/* ── FORM ── */
+.form-hidden{display:none}
+
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+
+label{
+  display:block;
+  font-size:11px;
+  font-weight:600;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  color:var(--muted);
+  margin-bottom:5px;
+}
+
+input[type=text],input[type=email],input[type=tel]{
+  width:100%;
+  background:rgba(74,222,128,.04);
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:11px 14px;
+  font-family:'DM Sans',sans-serif;
+  font-size:14px;
+  color:var(--text);
+  outline:none;
+  transition:border-color .15s;
+}
+
+input:focus{border-color:rgba(74,222,128,.5)}
+input::placeholder{color:var(--muted)}
+
+.mb12{margin-bottom:12px}
+
+/* ── CONSENT BOX ── */
+.consent-box{
+  background:rgba(74,222,128,.04);
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:14px;
+  margin-bottom:14px;
+}
+
+.consent-head{
+  font-size:10px;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;
+  color:var(--green);margin-bottom:10px;
+}
+
+.check-row{
+  display:flex;gap:10px;align-items:flex-start;
+  margin-bottom:10px;
+}
+
+.check-row:last-child{margin:0}
+
+.check-row input[type=checkbox]{
+  width:15px;height:15px;
+  margin-top:2px;flex-shrink:0;
+  accent-color:var(--green);
+  cursor:pointer;
+}
+
+.check-row label{
+  font-size:12px;color:var(--muted);
+  line-height:1.5;text-transform:none;
+  letter-spacing:0;font-weight:400;
+  cursor:pointer;
+}
+
+.check-row label b{color:var(--text);font-weight:600}
+
+/* ── CONFIRMATION ── */
+.confirm-hidden{display:none}
+
+.gan-display{
+  background:rgba(74,222,128,.06);
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:24px;
+  text-align:center;
+  margin-bottom:14px;
+}
+
+.gan-label{
+  font-size:10px;font-weight:700;
+  letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:10px;
+}
+
+.gan-number{
+  font-family:'JetBrains Mono',monospace;
+  font-size:clamp(20px,6vw,28px);
+  font-weight:700;
+  color:var(--green);
+  letter-spacing:.12em;
+  margin-bottom:6px;
+}
+
+.gan-sub{font-size:11px;color:var(--muted)}
+
+.venue-box{
+  background:rgba(74,222,128,.04);
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:14px;
+  font-size:12px;
+  color:var(--muted);
+  line-height:1.9;
+}
+
+/* ── FOOTER ── */
+.foot{
+  text-align:center;
+  padding-top:20px;
+  font-size:11px;
+  color:var(--muted);
+}
+
+.foot a{color:var(--green);text-decoration:none}
+
+/* ── GENERIC FALLBACK ── */
+.no-sponsor{
+  text-align:center;
+  padding:80px 20px;
+}
+
+.no-sponsor h2{
+  font-family:'Bebas Neue',sans-serif;
+  font-size:48px;
+  color:var(--green);
+  margin-bottom:12px;
+}
+
+.no-sponsor p{color:var(--muted);line-height:1.7}
+
+@media(max-width:400px){
+  .field-row{grid-template-columns:1fr}
+  .stats{grid-template-columns:repeat(3,1fr)}
+  .stat-n{font-size:26px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ── STEP 1: LANDING ── -->
+<div id="s1">
+  <div class="hero">
+    <div class="badge"><div class="badge-dot"></div><span id="badge-txt">Giveaway drop</span></div>
+    <h1 id="hero-h1">FREE<span id="hero-accent">SESSION</span></h1>
+    <p class="hero-sub" id="hero-sub">50 free balls at Boomers &amp; Swingers Driving Range, Astley</p>
+    <div class="stats">
+      <div class="stat"><div class="stat-n" id="stat-r">0</div><div class="stat-l">Claimed</div></div>
+      <div class="stat"><div class="stat-n" id="stat-m">-</div><div class="stat-l">Available</div></div>
+      <div class="stat"><div class="stat-n" id="stat-d">-</div><div class="stat-l">Days left</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">⛳ What you get</div>
+    <div class="card-body">
+      <div class="session-row">
+        <div class="session-info">
+          <b>Driving range session</b>
+          50 balls · Free club hire · Dogs &amp; kids welcome · No booking needed
+        </div>
+        <div class="free-badge">FREE</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">📋 How it works</div>
+    <div class="card-body" style="padding:8px 18px">
+      <ul class="steps">
+        <li class="step"><div class="step-n">1</div><div><b>Fill in your details</b><span>60 seconds — name, email &amp; mobile</span></div></li>
+        <li class="step"><div class="step-n">2</div><div><b>Get your unique gift card</b><span>Square gift card sent to your inbox instantly</span></div></li>
+        <li class="step"><div class="step-n">3</div><div><b>Turn up &amp; play</b><span>Show the gift card number to staff at the till</span></div></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="sponsor-banner">
+    <span style="font-size:18px">⛳</span>
+    <span id="sponsor-txt">Donated by <b>Boomers &amp; Swingers</b></span>
+  </div>
+
+  <button class="cta" onclick="go(2)">Claim my free session →</button>
+  <p class="expiry-note" id="expiry-note"></p>
+</div>
+
+<!-- ── STEP 2: FORM ── -->
+<div id="s2" class="form-hidden">
+  <div class="hero" style="padding-top:32px">
+    <div class="badge"><div class="badge-dot"></div><span>Almost there</span></div>
+    <h1 style="font-size:clamp(40px,11vw,64px)">CLAIM<span style="color:var(--green)">YOURS</span></h1>
+    <p class="hero-sub" id="form-sub">Fill in your details to get your unique Square gift card by email.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-head" id="form-head">🎁 Gifted by Boomers &amp; Swingers</div>
+    <div class="card-body">
+
+      <div class="field-row">
+        <div>
+          <label for="f1">First name *</label>
+          <input type="text" id="f1" placeholder="Sarah">
+        </div>
+        <div>
+          <label for="f2">Last name *</label>
+          <input type="text" id="f2" placeholder="Johnson">
+        </div>
+      </div>
+
+      <div class="mb12">
+        <label for="f3">Email address *</label>
+        <input type="email" id="f3" placeholder="your@email.com">
+      </div>
+
+      <div class="mb12">
+        <label for="f4">Mobile number *</label>
+        <input type="tel" id="f4" placeholder="07xxx xxxxxx">
+      </div>
+
+      <div class="field-row mb12">
+        <div>
+          <label for="f5">Postcode *</label>
+          <input type="text" id="f5" placeholder="WN7 3UF">
+        </div>
+        <div>
+          <label for="f6">Planned visit?</label>
+          <input type="text" id="f6" placeholder="e.g. Saturday">
+        </div>
+      </div>
+
+      <div class="consent-box">
+        <div class="consent-head">Your data choices</div>
+        <div class="check-row">
+          <input type="checkbox" id="c1" checked>
+          <label for="c1"><b>Boomers &amp; Swingers loyalty &amp; offers</b> — happy to hear about future sessions &amp; rewards.</label>
+        </div>
+        <div class="check-row">
+          <input type="checkbox" id="c2">
+          <label for="c2" id="c2-label"><b>Sponsor offers</b> — happy to share my details with the donating business.</label>
+        </div>
+      </div>
+
+      <div class="check-row mb12">
+        <input type="checkbox" id="c3" checked>
+        <label for="c3" style="font-size:11px;color:var(--muted);text-transform:none;letter-spacing:0;font-weight:400">I confirm I am 16+ and agree to the terms of this offer.</label>
+      </div>
+
+      <button class="cta" id="submit-btn" onclick="submit()">Get my gift card →</button>
+    </div>
+  </div>
+
+  <p class="foot"><a href="javascript:void(0)" onclick="go(1)">← Back</a> &nbsp;·&nbsp; <a href="https://www.boomersandswingers.golf/privacy-policy" target="_blank">Privacy policy</a></p>
+</div>
+
+<!-- ── STEP 3: CONFIRMATION ── -->
+<div id="s3" class="confirm-hidden">
+  <div class="hero" style="padding-top:32px">
+    <div class="badge"><div class="badge-dot"></div><span>✓ Confirmed</span></div>
+    <h1 style="font-size:clamp(40px,11vw,64px)">YOU'RE<span style="color:var(--green)">IN!</span></h1>
+    <p class="hero-sub">Your Square gift card has been sent to your inbox.</p>
+  </div>
+
+  <div class="gan-display">
+    <div class="gan-label">Your Square gift card</div>
+    <div class="gan-number" id="gan-display">---- ---- ---- ----</div>
+    <div class="gan-sub" id="gan-expiry">Single use · Show to staff at the range</div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">📋 Your booking summary</div>
+    <div class="card-body" style="font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;justify-content:space-between"><span>Donated by</span><b style="color:var(--text)" id="confirm-sponsor">Boomers &amp; Swingers</b></div>
+      <div style="display:flex;justify-content:space-between"><span>Reference</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px" id="confirm-ref">-</span></div>
+      <div style="display:flex;justify-content:space-between"><span>Balance</span><b style="color:var(--green)">£6.50</b></div>
+    </div>
+  </div>
+
+  <div class="venue-box">
+    📍 Manchester Rd, Astley M29 7EJ<br>
+    📱 Show your gift card number to staff at the till<br>
+    🕐 Mon–Fri 1–9pm &nbsp;|&nbsp; Sat–Sun 10am–5pm<br>
+    ⭐ No booking needed
+  </div>
+
+  <div style="margin-top:14px" class="foot">
+    <a href="https://www.boomersandswingers.golf" target="_blank">boomersandswingers.golf</a>
+  </div>
+</div>
+
+</div><!-- /wrap -->
+
+<script>
+// ── Sponsor config ──────────────────────────────────────────
+const SPONSORS = {
+  "tylersmithgolf": {
+    name: "Boomers & Swingers",
+    badge: "Tyler Smith Golf × B&S Drop",
+    h1accent: "DROP",
+    sub: "50 free balls · for @tylersmithgolf_ followers · Astley, Manchester",
+    sponsorTxt: "Gifted by <b>Boomers &amp; Swingers</b> for followers of @tylersmithgolf_ on Instagram.",
+    expiry: "Expires midnight 7 Apr 2026",
+    sessions: 10,
+    claimed: 0,
+    days: 1,
+    formHead: "🎁 For @tylersmithgolf_ followers",
+    formSub: "Fill in your details to get your unique Square gift card by email.",
+    c2label: "<b>Boomers &amp; Swingers offers</b> — happy to hear about future sessions &amp; rewards.",
+  },
+  "gildrew": {
+    name: "Gildrew",
+    badge: "Community Champion · Gildrew",
+    h1accent: "SESSION",
+    sub: "50 free balls · Donated by Gildrew · Boomers &amp; Swingers, Astley",
+    sponsorTxt: "Gifted by <b>Gildrew</b> — supporting the local community.",
+    expiry: "Valid until 31 Dec 2026",
+    sessions: 60, claimed: 34, days: 269,
+    formHead: "🎁 Gifted by Gildrew",
+    formSub: "Fill in your details to receive your unique Square gift card by email.",
+    c2label: "<b>Gildrew offers</b> — happy to share my details with Gildrew.",
+  },
+  "adl-scaffold": {
+    name: "ADL Scaffold",
+    badge: "Community Champion · ADL Scaffold",
+    h1accent: "SESSION",
+    sub: "50 free balls · Donated by ADL Scaffold · Boomers &amp; Swingers, Astley",
+    sponsorTxt: "Gifted by <b>ADL Scaffold</b> — supporting the Astley community.",
+    expiry: "Valid until 31 Mar 2027",
+    sessions: 60, claimed: 12, days: 359,
+    formHead: "🎁 Gifted by ADL Scaffold",
+    formSub: "Fill in your details to receive your unique Square gift card by email.",
+    c2label: "<b>ADL Scaffold offers</b> — happy to share my details with ADL Scaffold.",
+  },
+  "honest-fuel": {
+    name: "Honest Fuel",
+    badge: "Community Champion · Honest Fuel",
+    h1accent: "SESSION",
+    sub: "50 free balls · Donated by Honest Fuel · Boomers &amp; Swingers, Astley",
+    sponsorTxt: "Gifted by <b>Honest Fuel</b> — supporting the local community.",
+    expiry: "Valid until 30 Apr 2027",
+    sessions: 60, claimed: 8, days: 389,
+    formHead: "🎁 Gifted by Honest Fuel",
+    formSub: "Fill in your details to receive your unique Square gift card by email.",
+    c2label: "<b>Honest Fuel offers</b> — happy to share my details with Honest Fuel.",
+  },
+};
+
+// ── State ───────────────────────────────────────────────────
+const slug = new URLSearchParams(location.search).get("s") || "";
+const sp   = SPONSORS[slug];
+let currentRef = "";
+
+// ── Init ────────────────────────────────────────────────────
+window.addEventListener("DOMContentLoaded", () => {
+  if (!sp) {
+    document.querySelector(".wrap").innerHTML = `
+      <div class="no-sponsor">
+        <h2>⛳</h2>
+        <h2>Free Golf</h2>
+        <p>Visit <a href="https://www.boomersandswingers.golf" style="color:var(--green)">boomersandswingers.golf</a><br>to find a sponsor link or claim a session.</p>
+      </div>`;
+    return;
+  }
+
+  // Populate landing page
+  document.title = `Free Session — ${sp.name}`;
+  document.getElementById("badge-txt").textContent = sp.badge;
+  document.getElementById("hero-accent").textContent = sp.h1accent;
+  document.getElementById("hero-sub").textContent = sp.sub;
+  document.getElementById("sponsor-txt").innerHTML = sp.sponsorTxt;
+  document.getElementById("stat-r").textContent = sp.claimed;
+  document.getElementById("stat-m").textContent = sp.sessions - sp.claimed;
+  document.getElementById("stat-d").textContent = sp.days;
+  document.getElementById("expiry-note").textContent = sp.expiry + " · One per person · Astley";
+
+  // Form
+  document.getElementById("form-head").textContent = sp.formHead;
+  document.getElementById("form-sub").textContent = sp.formSub;
+  document.getElementById("c2-label").innerHTML = sp.c2label;
+  document.getElementById("confirm-sponsor").textContent = sp.name;
+});
+
+// ── Navigation ──────────────────────────────────────────────
+function go(step) {
+  document.getElementById("s1").style.display = step === 1 ? "" : "none";
+  document.getElementById("s2").className = step === 2 ? "" : "form-hidden";
+  document.getElementById("s3").className = step === 3 ? "" : "confirm-hidden";
+  window.scrollTo(0, 0);
+}
+window.go = go;
+
+// ── Submit ──────────────────────────────────────────────────
+async function submit() {
+  const f1 = document.getElementById("f1").value.trim();
+  const f2 = document.getElementById("f2").value.trim();
+  const f3 = document.getElementById("f3").value.trim();
+  const f4 = document.getElementById("f4").value.trim();
+  const f5 = document.getElementById("f5").value.trim();
+
+  if (!f1 || !f3 || !f4 || !f5) {
+    alert("Please fill in all required fields.");
+    return;
+  }
+
+  const rn  = Math.floor(Math.random() * 9000 + 1000);
+  const ref = "CCN-" + slug.slice(0, 3).toUpperCase() + "-" + rn;
+  currentRef = ref;
+
+  const btn = document.getElementById("submit-btn");
+  btn.disabled = true;
+  btn.textContent = "Creating your gift card…";
+
+  try {
+    const res = await fetch("/api", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        firstName: f1,
+        lastName:  f2,
+        email:     f3,
+        phone:     f4,
+        postcode:  f5,
+        plannedVisit:    document.getElementById("f6").value.trim(),
+        bsConsent:       document.getElementById("c1").checked,
+        sponsorConsent:  document.getElementById("c2").checked,
+        slug,
+        reference:    ref,
+        sponsorName:  sp.name,
+        expiry:       sp.expiry,
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      throw new Error(data.error || "Something went wrong");
+    }
+
+    // Show confirmation
+    document.getElementById("gan-display").textContent = data.gan || ref;
+    document.getElementById("gan-expiry").textContent = sp.expiry + " · Single use · Show to staff";
+    document.getElementById("confirm-ref").textContent = data.reference || ref;
+    go(3);
+
+  } catch (err) {
+    alert("Sorry, something went wrong: " + err.message + "\n\nPlease try again or email nick@boomersandswingers.golf");
+    btn.disabled = false;
+    btn.textContent = "Get my gift card →";
+  }
+}
+window.submit = submit;
+</script>
+</body>
+</html>
