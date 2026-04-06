@@ -1,0 +1,6 @@
+name = "freeballs"
+main = "worker.js"
+compatibility_date = "2024-01-18"
+
+[vars]
+SQUARE_LOCATION = "LDQSQ4YZX7YS0"
