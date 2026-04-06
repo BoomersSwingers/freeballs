@@ -1,9 +1,11 @@
 /**
- * CCN Freeballs Worker v3
- * - Screenshot banner + download button on confirmation
- * - Resend email
- * - Live counter via /stats
- * - Fixed QR code (\s not s)
+ * CCN Freeballs Worker v4
+ * Added: /admin dashboard (password protected, live Square data)
+ * Routes:
+ *   GET  /          - claim page
+ *   GET  /stats?s=  - live counter
+ *   GET  /admin     - admin dashboard (requires ?pw=ADMIN_PASSWORD)
+ *   POST /api       - claim handler
  */
 
 const SQUARE = "https://connect.squareup.com/v2";
@@ -12,8 +14,7 @@ const SPONSORS = {
   "tylersmithgolf": {
     name: "Boomers & Swingers",
     expiry: "Expires midnight 9 Apr 2026",
-    amount: "£6.50",
-    total: 16,
+    amount: "£6.50", total: 16,
     gans: [
       "7783326544467258","7783323839157165","7783325804455607","7783325970015755",
       "7783323605018625","7783329528774574","7783329729332347","7783320758309298",
@@ -31,8 +32,9 @@ export default {
     try {
       const url = new URL(request.url);
       if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders() });
-      if (request.method === "GET" && url.pathname === "/stats") return await handleStats(request, env);
-      if (request.method === "POST" && url.pathname === "/api") return await handleAPI(request, env);
+      if (request.method === "GET" && url.pathname === "/stats")  return await handleStats(request, env);
+      if (request.method === "GET" && url.pathname === "/admin")  return await handleAdmin(request, env);
+      if (request.method === "POST" && url.pathname === "/api")   return await handleAPI(request, env);
       if (request.method === "GET") return new Response(getHTML(), { headers: { "Content-Type": "text/html;charset=UTF-8" } });
       return jsonResponse({ error: "Not found" }, 404);
     } catch (err) {
@@ -41,18 +43,230 @@ export default {
   }
 };
 
+// ── Admin dashboard ─────────────────────────────────────────
+
+async function handleAdmin(request, env) {
+  const url = new URL(request.url);
+  const pw = url.searchParams.get("pw");
+  const adminPw = env.ADMIN_PASSWORD;
+  const slug = url.searchParams.get("s") || "";
+
+  if (!adminPw || pw !== adminPw) {
+    return new Response(loginHTML(slug), { headers: { "Content-Type": "text/html;charset=UTF-8" } });
+  }
+
+  try {
+    // Search for all CCN customers
+    const searchRes = await sq(env.SQUARE_TOKEN, "POST", "/customers/search", {
+      limit: 100,
+      query: {
+        filter: { reference_id: { fuzzy: "CCN" } },
+        sort: { field: "CREATED_AT", order: "DESC" }
+      }
+    });
+
+    const customers = searchRes.customers || [];
+
+    // Filter by sponsor slug if provided
+    const filtered = slug
+      ? customers.filter(c => (c.note || "").includes(slug))
+      : customers;
+
+    // For each customer, get their linked gift cards
+    const rows = await Promise.all(filtered.map(async c => {
+      let gan = "";
+      let balance = "";
+      let status = "Unknown";
+
+      try {
+        const gcRes = await sq(env.SQUARE_TOKEN, "GET", `/gift-cards?customer_id=${c.id}`, null);
+        const cards = gcRes.gift_cards || [];
+        if (cards.length > 0) {
+          const card = cards[0];
+          gan = card.gan || "";
+          const bal = card.balance_money?.amount || 0;
+          balance = "£" + (bal / 100).toFixed(2);
+          status = bal === 0 ? "REDEEMED" : "ACTIVE";
+        } else {
+          status = "No card";
+        }
+      } catch {}
+
+      // Parse note: "CCN claimant · tylersmithgolf · CCN-TYL-1234 · 2026-04-06"
+      const note = c.note || "";
+      const parts = note.split("·").map(s => s.trim());
+      const sponsorSlug = parts[1] || "";
+      const ref = parts[2] || "";
+      const sponsor = SPONSORS[sponsorSlug]?.name || sponsorSlug;
+
+      return {
+        name: [c.given_name, c.family_name].filter(Boolean).join(" "),
+        email: c.email_address || "",
+        phone: c.phone_number || "",
+        postcode: c.address?.postal_code || "",
+        sponsor,
+        ref,
+        gan: gan ? gan.replace(/(\d{4})(?=\d)/g, "$1 ") : "",
+        balance,
+        status,
+        date: c.created_at?.slice(0, 10) || ""
+      };
+    }));
+
+    // Get KV stats for each sponsor
+    const stats = {};
+    for (const s of Object.keys(SPONSORS)) {
+      try {
+        const claimed = await env.CCN_KV.get("claimed:" + s);
+        stats[s] = { claimed: parseInt(claimed || "0"), total: SPONSORS[s].total, name: SPONSORS[s].name };
+      } catch {}
+    }
+
+    return new Response(adminHTML(rows, stats, slug, pw), { headers: { "Content-Type": "text/html;charset=UTF-8" } });
+
+  } catch (err) {
+    return new Response(`<pre>Error: ${err.message}</pre>`, { headers: { "Content-Type": "text/html" } });
+  }
+}
+
+function loginHTML(slug) {
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CCN Admin</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'DM Sans',sans-serif;background:#070d07;color:#e8f5e8;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.box{background:#111c11;border:1px solid rgba(74,222,128,.18);border-radius:16px;padding:40px;width:100%;max-width:360px;text-align:center}
+h1{font-size:24px;color:#4ADE80;margin-bottom:8px}p{color:#6b7a6b;font-size:14px;margin-bottom:24px}
+input{width:100%;padding:12px 14px;background:rgba(74,222,128,.04);border:1px solid rgba(74,222,128,.18);border-radius:10px;color:#e8f5e8;font-size:14px;outline:none;margin-bottom:14px}
+button{width:100%;background:#4ADE80;color:#070d07;font-size:14px;font-weight:700;padding:13px;border:none;border-radius:100px;cursor:pointer}
+</style></head><body>
+<div class="box">
+  <h1>⛳ CCN Admin</h1>
+  <p>Boomers &amp; Swingers · Community Champion Network</p>
+  <form method="GET">
+    <input type="password" name="pw" placeholder="Admin password" autofocus>
+    ${slug ? `<input type="hidden" name="s" value="${slug}">` : ""}
+    <button type="submit">Sign in →</button>
+  </form>
+</div>
+</body></html>`;
+}
+
+function adminHTML(rows, stats, slug, pw) {
+  const redeemed = rows.filter(r => r.status === "REDEEMED").length;
+  const active   = rows.filter(r => r.status === "ACTIVE").length;
+
+  const sponsorTabs = Object.entries(SPONSORS).map(([s, sp]) => {
+    const isActive = slug === s;
+    return `<a href="/admin?pw=${pw}&s=${s}" style="display:inline-block;padding:7px 16px;border-radius:100px;font-size:12px;font-weight:600;text-decoration:none;margin-right:6px;margin-bottom:6px;
+      background:${isActive ? "#4ADE80" : "rgba(74,222,128,.08)"};
+      color:${isActive ? "#070d07" : "#4ADE80"};
+      border:1px solid ${isActive ? "#4ADE80" : "rgba(74,222,128,.2)"}">
+      ${sp.name} ${stats[s] ? `(${stats[s].claimed}/${stats[s].total})` : ""}
+    </a>`;
+  }).join("");
+
+  const rowsHTML = rows.length === 0
+    ? `<tr><td colspan="9" style="text-align:center;color:#6b7a6b;padding:40px">No claimants yet</td></tr>`
+    : rows.map(r => `<tr>
+        <td>${r.date}</td>
+        <td><b style="color:#e8f5e8">${r.name}</b></td>
+        <td><a href="mailto:${r.email}" style="color:#4ADE80;text-decoration:none">${r.email}</a></td>
+        <td>${r.phone}</td>
+        <td>${r.postcode}</td>
+        <td style="color:#6b7a6b;font-size:12px">${r.sponsor}</td>
+        <td><span style="font-family:monospace;font-size:11px;color:#9ca3af">${r.gan}</span></td>
+        <td style="color:#4ADE80;font-weight:600">${r.balance}</td>
+        <td><span style="
+          display:inline-block;padding:3px 10px;border-radius:100px;font-size:11px;font-weight:700;
+          background:${r.status === "REDEEMED" ? "rgba(239,68,68,.15)" : r.status === "ACTIVE" ? "rgba(74,222,128,.15)" : "rgba(107,122,107,.15)"};
+          color:${r.status === "REDEEMED" ? "#f87171" : r.status === "ACTIVE" ? "#4ADE80" : "#6b7a6b"}">
+          ${r.status}
+        </span></td>
+      </tr>`).join("");
+
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CCN Admin — Boomers &amp; Swingers</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Sans',sans-serif;background:#070d07;color:#e8f5e8;min-height:100vh}
+body::after{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(74,222,128,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(74,222,128,.03) 1px,transparent 1px);background-size:48px 48px;pointer-events:none;z-index:0}
+.wrap{position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:32px 20px 60px}
+.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;flex-wrap:wrap;gap:12px}
+.logo{font-family:'Bebas Neue',sans-serif;font-size:28px;color:#4ADE80;letter-spacing:.04em}
+.logo span{color:#e8f5e8}
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:24px}
+.card{background:#111c11;border:1px solid rgba(74,222,128,.18);border-radius:12px;padding:16px}
+.card-n{font-family:'Bebas Neue',sans-serif;font-size:36px;color:#fff;line-height:1}
+.card-l{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#6b7a6b;margin-top:4px}
+.tabs{margin-bottom:20px}
+.all-tab{display:inline-block;padding:7px 16px;border-radius:100px;font-size:12px;font-weight:600;text-decoration:none;margin-right:6px;margin-bottom:6px;
+  background:${!slug ? "#4ADE80" : "rgba(74,222,128,.08)"};
+  color:${!slug ? "#070d07" : "#4ADE80"};
+  border:1px solid ${!slug ? "#4ADE80" : "rgba(74,222,128,.2)"}}
+.table-wrap{background:#111c11;border:1px solid rgba(74,222,128,.18);border-radius:16px;overflow:hidden;overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:900px}
+thead{background:rgba(74,222,128,.06)}
+th{padding:12px 14px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b7a6b;text-align:left;white-space:nowrap}
+td{padding:12px 14px;font-size:13px;color:#9ca3af;border-top:1px solid rgba(74,222,128,.07);white-space:nowrap}
+tr:hover td{background:rgba(74,222,128,.03)}
+.back{font-size:12px;color:#6b7a6b;text-decoration:none}
+.back:hover{color:#4ADE80}
+</style></head><body>
+<div class="wrap">
+  <div class="header">
+    <div class="logo">CCN <span>Admin</span></div>
+    <a href="/admin?pw=${pw}" class="back">← All sponsors</a>
+  </div>
+
+  <div class="summary">
+    <div class="card"><div class="card-n">${rows.length}</div><div class="card-l">Total claimants</div></div>
+    <div class="card"><div class="card-n" style="color:#4ADE80">${active}</div><div class="card-l">Active (unused)</div></div>
+    <div class="card"><div class="card-n" style="color:#f87171">${redeemed}</div><div class="card-l">Redeemed</div></div>
+    ${Object.entries(stats).map(([s, st]) => `
+    <div class="card">
+      <div class="card-n">${st.claimed}</div>
+      <div class="card-l">${st.name} claimed</div>
+    </div>`).join("")}
+  </div>
+
+  <div class="tabs">
+    <a href="/admin?pw=${pw}" class="all-tab">All sponsors</a>
+    ${sponsorTabs}
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th><th>Name</th><th>Email</th><th>Phone</th><th>Postcode</th>
+          <th>Sponsor</th><th>Gift card</th><th>Balance</th><th>Status</th>
+        </tr>
+      </thead>
+      <tbody>${rowsHTML}</tbody>
+    </table>
+  </div>
+
+  <p style="text-align:center;margin-top:20px;font-size:11px;color:#4b5563">
+    CCN Admin · Boomers &amp; Swingers · Data pulled live from Square
+    · <a href="/admin?pw=${pw}" style="color:#4ADE80;text-decoration:none" onclick="location.reload()">↻ Refresh</a>
+  </p>
+</div>
+</body></html>`;
+}
+
+// ── Stats endpoint ───────────────────────────────────────────
+
 async function handleStats(request, env) {
   const url = new URL(request.url);
   const slug = url.searchParams.get("s");
   if (!slug || !SPONSORS[slug]) return jsonResponse({ error: "Unknown sponsor" }, 400);
   const sponsor = SPONSORS[slug];
   let claimed = 0;
-  try {
-    const val = await env.CCN_KV.get("claimed:" + slug);
-    claimed = val ? parseInt(val) : 0;
-  } catch {}
+  try { const v = await env.CCN_KV.get("claimed:" + slug); claimed = v ? parseInt(v) : 0; } catch {}
   return jsonResponse({ claimed, available: sponsor.total - claimed, total: sponsor.total });
 }
+
+// ── Claim API ────────────────────────────────────────────────
 
 async function handleAPI(request, env) {
   if (!env.SQUARE_TOKEN) return jsonResponse({ error: "SQUARE_TOKEN not configured" }, 500);
@@ -64,9 +278,7 @@ async function handleAPI(request, env) {
     const text = await request.text();
     if (!text || !text.trim()) return jsonResponse({ error: "Empty request body" }, 400);
     body = JSON.parse(text);
-  } catch (err) {
-    return jsonResponse({ error: "Invalid JSON: " + err.message }, 400);
-  }
+  } catch (err) { return jsonResponse({ error: "Invalid JSON: " + err.message }, 400); }
 
   const { firstName, lastName, email, phone, postcode,
           plannedVisit, bsConsent, sponsorConsent,
@@ -87,24 +299,20 @@ async function handleAPI(request, env) {
     if (claimed >= sponsor.gans.length) return jsonResponse({ error: "All sessions for this sponsor have been claimed" }, 400);
     gan = sponsor.gans[claimed];
     await env.CCN_KV.put("claimed:" + slug, String(claimed + 1));
-  } catch (err) {
-    return jsonResponse({ error: "Queue error: " + err.message }, 500);
-  }
+  } catch (err) { return jsonResponse({ error: "Queue error: " + err.message }, 500); }
 
   const fmtGAN = gan.replace(/(\d{4})(?=\d)/g, "$1 ");
-  const token = env.SQUARE_TOKEN;
-  const donor = sponsorName || sponsor.name;
+  const token  = env.SQUARE_TOKEN;
+  const donor  = sponsorName || sponsor.name;
   const expiryTxt = expiry || sponsor.expiry;
 
   let customerId;
-  try {
-    customerId = await findOrCreateCustomer(token, { firstName, lastName, email, phone, postcode, slug, ref });
-  } catch (err) { console.warn("Customer (non-fatal):", err.message); }
+  try { customerId = await findOrCreateCustomer(token, { firstName, lastName, email, phone, postcode, slug, ref }); }
+  catch (err) { console.warn("Customer:", err.message); }
 
   if (customerId) {
-    try {
-      await sq(token, "POST", "/gift-cards/link-customer", { customer_id: customerId, gift_card_gan: gan });
-    } catch (err) { console.warn("Link (non-fatal):", err.message); }
+    try { await sq(token, "POST", "/gift-cards/link-customer", { customer_id: customerId, gift_card_gan: gan }); }
+    catch (err) { console.warn("Link:", err.message); }
   }
 
   try {
@@ -137,7 +345,7 @@ async function handleAPI(request, env) {
         ].join("\n")
       })
     });
-  } catch (err) { console.warn("Email (non-fatal):", err.message); }
+  } catch (err) { console.warn("Email:", err.message); }
 
   return jsonResponse({ success: true, gan: fmtGAN, reference: ref, customerId: customerId || null, balance: sponsor.amount });
 }
@@ -248,25 +456,10 @@ input::placeholder{color:var(--muted)}
 .ck input[type=checkbox]{width:15px;height:15px;margin-top:2px;flex-shrink:0;accent-color:var(--green);cursor:pointer}
 .ck label{font-size:12px;color:var(--muted);line-height:1.5;text-transform:none;letter-spacing:0;font-weight:400;cursor:pointer}
 .ck label b{color:var(--text);font-weight:600}
-/* Screenshot banner */
-.shot-banner{
-  background:rgba(74,222,128,.15);
-  border:2px solid var(--green);
-  border-radius:12px;
-  padding:12px 16px;
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:12px;
-  margin-bottom:14px;
-}
-.shot-banner-text{
-  display:flex;align-items:center;gap:8px;
-  font-size:14px;font-weight:700;color:var(--green);
-}
+.shot-banner{background:rgba(74,222,128,.15);border:2px solid var(--green);border-radius:12px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+.shot-banner-text{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:700;color:var(--green)}
 .shot-banner-text span{font-size:20px}
 .shot-banner-sub{font-size:11px;color:var(--muted);margin-top:2px;font-weight:400}
-/* Saveable card */
 .gan{background:var(--card);border:2px solid var(--border);border-radius:16px;padding:24px;text-align:center;margin-bottom:14px}
 .gl{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:12px}
 #qr{margin:0 auto 14px;width:160px;height:160px;background:#fff;padding:8px;border-radius:10px;display:flex;align-items:center;justify-content:center}
@@ -274,20 +467,7 @@ input::placeholder{color:var(--muted)}
 .gn{font-family:'JetBrains Mono',monospace;font-size:clamp(18px,5vw,24px);font-weight:700;color:var(--green);letter-spacing:.12em;margin-bottom:4px}
 .gs{font-size:11px;color:var(--muted);margin-bottom:8px}
 .gan-logo{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.05em}
-/* Download button */
-.dl-btn{
-  width:100%;
-  background:transparent;
-  border:2px solid var(--green);
-  color:var(--green);
-  font-family:'DM Sans',sans-serif;
-  font-size:14px;font-weight:700;
-  padding:13px;border-radius:100px;
-  cursor:pointer;
-  transition:background .15s,color .15s;
-  margin-bottom:14px;
-  display:flex;align-items:center;justify-content:center;gap:8px;
-}
+.dl-btn{width:100%;background:transparent;border:2px solid var(--green);color:var(--green);font-family:'DM Sans',sans-serif;font-size:14px;font-weight:700;padding:13px;border-radius:100px;cursor:pointer;transition:background .15s,color .15s;margin-bottom:14px;display:flex;align-items:center;justify-content:center;gap:8px}
 .dl-btn:hover{background:var(--green);color:var(--dark)}
 .vbox{background:rgba(74,222,128,.04);border:1px solid var(--border);border-radius:12px;padding:14px;font-size:12px;color:var(--muted);line-height:1.9}
 .foot{text-align:center;padding-top:20px;font-size:11px;color:var(--muted)}
@@ -298,8 +478,6 @@ input::placeholder{color:var(--muted)}
 </head>
 <body>
 <div class="wrap">
-
-<!-- Step 1: Landing -->
 <div id="s1">
   <div class="hero">
     <div class="badge"><div class="dot"></div><span id="bt">Giveaway drop</span></div>
@@ -329,8 +507,6 @@ input::placeholder{color:var(--muted)}
   <button class="cta" onclick="go(2)">Claim my free session →</button>
   <p class="exp" id="en"></p>
 </div>
-
-<!-- Step 2: Form -->
 <div id="s2" class="hidden">
   <div class="hero" style="padding-top:32px">
     <div class="badge"><div class="dot"></div><span>Almost there</span></div>
@@ -361,16 +537,12 @@ input::placeholder{color:var(--muted)}
   </div>
   <p class="foot"><a href="javascript:void(0)" onclick="go(1)">← Back</a> · <a href="https://www.boomersandswingers.golf/privacy-policy" target="_blank">Privacy policy</a></p>
 </div>
-
-<!-- Step 3: Confirmation -->
 <div id="s3" class="hidden">
   <div class="hero" style="padding-top:32px">
     <div class="badge"><div class="dot"></div><span>✓ Confirmed</span></div>
     <h1 style="font-size:clamp(40px,11vw,64px)">YOU'RE<span>IN!</span></h1>
     <p class="sub">Your gift card is ready. Screenshot it or download below.</p>
   </div>
-
-  <!-- Screenshot banner -->
   <div class="shot-banner">
     <div>
       <div class="shot-banner-text"><span>📸</span> Screenshot this page!</div>
@@ -378,8 +550,6 @@ input::placeholder{color:var(--muted)}
     </div>
     <span style="font-size:28px">👇</span>
   </div>
-
-  <!-- Saveable card -->
   <div class="gan" id="gan-card">
     <div class="gl">Your Square gift card</div>
     <div id="qr"></div>
@@ -387,12 +557,7 @@ input::placeholder{color:var(--muted)}
     <div class="gs" id="ge">Single use · Show QR or number to staff</div>
     <div class="gan-logo">⛳ Boomers &amp; Swingers · boomersandswingers.golf</div>
   </div>
-
-  <!-- Download button -->
-  <button class="dl-btn" onclick="dlCard()">
-    <span>⬇</span> Save gift card to phone
-  </button>
-
+  <button class="dl-btn" onclick="dlCard()"><span>⬇</span> Save gift card to phone</button>
   <div class="card">
     <div class="ch">📋 Summary</div>
     <div class="cb" style="font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:10px">
@@ -404,9 +569,7 @@ input::placeholder{color:var(--muted)}
   <div class="vbox">📍 Manchester Rd, Astley M29 7EJ<br>📱 Show QR code or gift card number to staff<br>🕐 Mon–Fri 1–9pm | Sat–Sun 10am–5pm<br>⭐ No booking needed</div>
   <div style="margin-top:14px" class="foot"><a href="https://www.boomersandswingers.golf" target="_blank">boomersandswingers.golf</a></div>
 </div>
-
-</div><!-- /wrap -->
-
+</div>
 <script>
 const SP={
   "tylersmithgolf":{n:"Boomers & Swingers",b:"Tyler Smith Golf × B&S Drop",h:"DROP",s:"50 free balls · for @tylersmithgolf_ followers · Astley",st:'Gifted by <b>Boomers &amp; Swingers</b> for @tylersmithgolf_ followers.',e:"Expires midnight 9 Apr 2026",d:3,fh:"🎁 For @tylersmithgolf_ followers",c2:"<b>B&S offers</b> — happy to hear about future sessions."},
@@ -416,7 +579,6 @@ const SP={
 };
 const slug=new URLSearchParams(location.search).get("s")||"";
 const sp=SP[slug];
-
 window.addEventListener("DOMContentLoaded",async()=>{
   if(!sp){document.querySelector(".wrap").innerHTML='<div style="text-align:center;padding:80px 20px"><h1 style="font-family:Bebas Neue,sans-serif;color:var(--green);font-size:48px">⛳</h1><p style="color:var(--muted);margin-top:12px">Visit <a href="https://www.boomersandswingers.golf" style="color:var(--green)">boomersandswingers.golf</a> for your sponsor link.</p></div>';return;}
   document.title="Free Session — "+sp.n;
@@ -429,67 +591,28 @@ window.addEventListener("DOMContentLoaded",async()=>{
   document.getElementById("fh").textContent=sp.fh;
   document.getElementById("c2l").innerHTML=sp.c2;
   document.getElementById("cs").textContent=sp.n;
-  try{
-    const r=await fetch("/stats?s="+slug);
-    const d=await r.json();
-    document.getElementById("sr").textContent=d.claimed;
-    document.getElementById("sm").textContent=d.available;
-  }catch{
-    document.getElementById("sr").textContent="?";
-    document.getElementById("sm").textContent="?";
-  }
+  try{const r=await fetch("/stats?s="+slug);const d=await r.json();document.getElementById("sr").textContent=d.claimed;document.getElementById("sm").textContent=d.available;}
+  catch{document.getElementById("sr").textContent="?";document.getElementById("sm").textContent="?";}
 });
-
-function go(n){
-  document.getElementById("s1").style.display=n===1?"":"none";
-  document.getElementById("s2").className=n===2?"":"hidden";
-  document.getElementById("s3").className=n===3?"":"hidden";
-  document.getElementById("err").style.display="none";
-  window.scrollTo(0,0);
-}
+function go(n){document.getElementById("s1").style.display=n===1?"":"none";document.getElementById("s2").className=n===2?"":"hidden";document.getElementById("s3").className=n===3?"":"hidden";document.getElementById("err").style.display="none";window.scrollTo(0,0);}
 window.go=go;
-
 function showErr(msg){const el=document.getElementById("err");el.textContent=msg;el.style.display="block";}
-
-// Download gift card as image
 async function dlCard(){
-  const btn=document.querySelector(".dl-btn");
-  const orig=btn.innerHTML;
-  btn.innerHTML="<span>⏳</span> Saving…";
-  btn.disabled=true;
-  try{
-    const canvas=await html2canvas(document.getElementById("gan-card"),{
-      backgroundColor:"#111c11",
-      scale:2,
-      useCORS:true,
-      logging:false
-    });
-    const link=document.createElement("a");
-    link.download="boomers-gift-card.png";
-    link.href=canvas.toDataURL("image/png");
-    link.click();
-  }catch(e){
-    alert("Screenshot didn't work — please screenshot the page manually.");
-  }
-  btn.innerHTML=orig;
-  btn.disabled=false;
+  const btn=document.querySelector(".dl-btn");const orig=btn.innerHTML;btn.innerHTML="<span>⏳</span> Saving…";btn.disabled=true;
+  try{const canvas=await html2canvas(document.getElementById("gan-card"),{backgroundColor:"#111c11",scale:2,useCORS:true,logging:false});const link=document.createElement("a");link.download="boomers-gift-card.png";link.href=canvas.toDataURL("image/png");link.click();}
+  catch(e){alert("Screenshot didn't work — please screenshot the page manually.");}
+  btn.innerHTML=orig;btn.disabled=false;
 }
 window.dlCard=dlCard;
-
 async function sub(){
   const f1=document.getElementById("f1").value.trim(),f2=document.getElementById("f2").value.trim(),f3=document.getElementById("f3").value.trim(),f4=document.getElementById("f4").value.trim(),f5=document.getElementById("f5").value.trim();
   if(!f1||!f3||!f4||!f5){showErr("Please fill in all required fields (marked with *).");return;}
-  const rn=Math.floor(Math.random()*9000+1000);
-  const ref="CCN-"+slug.slice(0,3).toUpperCase()+"-"+rn;
-  const btn=document.getElementById("sb");
-  btn.disabled=true;btn.textContent="Sending your gift card…";
-  document.getElementById("err").style.display="none";
+  const rn=Math.floor(Math.random()*9000+1000);const ref="CCN-"+slug.slice(0,3).toUpperCase()+"-"+rn;
+  const btn=document.getElementById("sb");btn.disabled=true;btn.textContent="Sending your gift card…";document.getElementById("err").style.display="none";
   try{
     const res=await fetch("/api",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({firstName:f1,lastName:f2,email:f3,phone:f4,postcode:f5,plannedVisit:document.getElementById("f6").value.trim(),bsConsent:document.getElementById("c1").checked,sponsorConsent:document.getElementById("c2").checked,slug,reference:ref,sponsorName:sp?.n,expiry:sp?.e})});
-    let data;
-    try{data=await res.json();}catch{throw new Error("Server returned an invalid response. Please try again.");}
+    let data;try{data=await res.json();}catch{throw new Error("Server returned an invalid response. Please try again.");}
     if(!res.ok||data.error)throw new Error(data.error||"Something went wrong (HTTP "+res.status+")");
-    // Build QR code
     const rawGAN=(data.gan||ref).replace(/\s/g,"");
     document.getElementById("qr").innerHTML="";
     new QRCode(document.getElementById("qr"),{width:144,height:144,text:rawGAN,colorDark:"#070d07",colorLight:"#ffffff"});
@@ -497,10 +620,7 @@ async function sub(){
     document.getElementById("ge").textContent=(sp?.e||"")+" · Single use · Show to staff";
     document.getElementById("cr").textContent=data.reference||ref;
     go(3);
-  }catch(err){
-    showErr(err.message||"An error occurred. Please try again.");
-    btn.disabled=false;btn.textContent="Get my gift card →";
-  }
+  }catch(err){showErr(err.message||"An error occurred. Please try again.");btn.disabled=false;btn.textContent="Get my gift card →";}
 }
 window.sub=sub;
 </script>
