@@ -201,7 +201,6 @@ async function findOrCreateCustomer(token, { firstName, lastName, email, phone, 
     address: { postal_code: postcode, country: "GB" },
     reference_id: ref,
     note: `CCN claimant · ${slug} · ${new Date().toISOString().slice(0, 10)}`,
-    creation_source: "THIRD_PARTY"
   });
 
   if (!created.customer) throw new Error("Customer creation returned no customer: " + JSON.stringify(created));
