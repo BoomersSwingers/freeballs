@@ -1,16 +1,58 @@
+/**
+ * CCN Freeballs Worker — Pre-activated GAN queue approach
+ * Uses Cloudflare KV (CCN_KV binding) to track claim index per sponsor
+ * Pre-activated GANs are stored in the SPONSORS config below
+ *
+ * KV binding name: CCN_KV (namespace ID: 2bd4d308dbd14d2b97fdb3f92835552f)
+ * Add this binding in Cloudflare: Workers → freeballs → Settings → Variables → KV Namespace Bindings
+ *   Variable name: CCN_KV
+ *   Namespace: ccn-gift-cards
+ */
+
 const SQUARE = "https://connect.squareup.com/v2";
 
-const SESSION_AMOUNTS = {
-  "tylersmithgolf": 650,
-  "gildrew":        650,
-  "talentia-group": 650,
-  "adl-scaffold":   650,
-  "honest-fuel":    650,
+// Pre-activated gift card GANs per sponsor
+// Each GAN is a real Square gift card with £6.50 balance, ready to use
+const SPONSORS = {
+  "tylersmithgolf": {
+    name: "Boomers & Swingers",
+    expiry: "Expires midnight 9 Apr 2026",
+    amount: "£6.50",
+    gans: [
+      "7783326544467258",
+      "7783323839157165",
+      "7783325804455607",
+      "7783325970015755",
+      "7783323605018625",
+      "7783329528774574",
+      "7783329729332347",
+      "7783320758309298",
+      "7783329403249551",
+      "7783328061743970"
+    ]
+  },
+  "gildrew": {
+    name: "Gildrew",
+    expiry: "Valid until 31 Dec 2026",
+    amount: "£6.50",
+    gans: [] // Add pre-activated GANs here when ready
+  },
+  "adl-scaffold": {
+    name: "ADL Scaffold",
+    expiry: "Valid until 31 Mar 2027",
+    amount: "£6.50",
+    gans: []
+  },
+  "honest-fuel": {
+    name: "Honest Fuel",
+    expiry: "Valid until 30 Apr 2027",
+    amount: "£6.50",
+    gans: []
+  }
 };
 
 export default {
   async fetch(request, env) {
-    // Top-level catch — always return JSON, never empty body
     try {
       const url = new URL(request.url);
 
@@ -36,145 +78,124 @@ export default {
 };
 
 async function handleAPI(request, env) {
-  // Validate env vars first
-  if (!env.SQUARE_TOKEN) {
-    return jsonResponse({ error: "SQUARE_TOKEN not configured" }, 500);
-  }
-  if (!env.WEB3FORMS_KEY) {
-    return jsonResponse({ error: "WEB3FORMS_KEY not configured" }, 500);
-  }
+  if (!env.SQUARE_TOKEN) return jsonResponse({ error: "SQUARE_TOKEN not configured" }, 500);
+  if (!env.WEB3FORMS_KEY) return jsonResponse({ error: "WEB3FORMS_KEY not configured" }, 500);
+  if (!env.CCN_KV) return jsonResponse({ error: "CCN_KV binding not configured" }, 500);
 
-  // Parse body
   let body;
   try {
     const text = await request.text();
-    if (!text || text.trim() === "") {
-      return jsonResponse({ error: "Empty request body" }, 400);
-    }
+    if (!text || !text.trim()) return jsonResponse({ error: "Empty request body" }, 400);
     body = JSON.parse(text);
   } catch (err) {
     return jsonResponse({ error: "Invalid JSON: " + err.message }, 400);
   }
 
-  const {
-    firstName, lastName, email, phone, postcode,
-    plannedVisit, bsConsent, sponsorConsent,
-    slug, reference, sponsorName, expiry
-  } = body;
+  const { firstName, lastName, email, phone, postcode,
+          plannedVisit, bsConsent, sponsorConsent,
+          slug, reference, sponsorName, expiry } = body;
 
   if (!firstName || !email || !phone || !postcode) {
-    return jsonResponse({ error: "Missing required fields: firstName, email, phone, postcode" }, 400);
+    return jsonResponse({ error: "Missing required fields" }, 400);
   }
 
-  const token      = env.SQUARE_TOKEN;
-  const locationId = env.SQUARE_LOCATION || "LDQSQ4YZX7YS0";
-  const amount     = SESSION_AMOUNTS[slug] || 650;
-  const ref        = reference || ("CCN-" + Math.random().toString(36).slice(2, 8).toUpperCase());
+  const sponsor = SPONSORS[slug];
+  if (!sponsor) return jsonResponse({ error: "Unknown sponsor: " + slug }, 400);
+  if (!sponsor.gans.length) return jsonResponse({ error: "No gift cards configured for this sponsor yet" }, 400);
 
+  const ref = reference || ("CCN-" + Math.random().toString(36).slice(2, 8).toUpperCase());
+
+  // Get next available GAN from KV queue
+  let gan;
   try {
-    // Step 1: Find or create customer
-    let customerId;
-    try {
-      customerId = await findOrCreateCustomer(token, { firstName, lastName, email, phone, postcode, slug, ref });
-    } catch (err) {
-      return jsonResponse({ error: "Customer step failed: " + err.message }, 500);
+    const claimedStr = await env.CCN_KV.get("claimed:" + slug);
+    const claimed = claimedStr ? parseInt(claimedStr) : 0;
+
+    if (claimed >= sponsor.gans.length) {
+      return jsonResponse({ error: "All sessions for this sponsor have been claimed" }, 400);
     }
 
-    // Step 2: Create gift card
-    let gcId, gan;
-    try {
-      const gcData = await sq(token, "POST", "/gift-cards", {
-        idempotency_key: ref + "-gc",
-        location_id: locationId,
-        gift_card: { type: "DIGITAL" }
-      });
-      if (!gcData.gift_card) throw new Error("No gift_card in response: " + JSON.stringify(gcData));
-      gcId = gcData.gift_card.id;
-      gan  = gcData.gift_card.gan;
-    } catch (err) {
-      return jsonResponse({ error: "Gift card creation failed: " + err.message }, 500);
-    }
+    gan = sponsor.gans[claimed];
 
-    // Step 3: Activate gift card
-    await new Promise(r => setTimeout(r, 1500));
-    try {
-      await sq(token, "POST", "/gift-card-activities", {
-        idempotency_key: ref + "-act",
-        gift_card_activity: {
-          type: "ACTIVATE",
-          location_id: locationId,
-          gift_card_id: gcId,
-          activate_activity_details: {
-            amount_money: { amount, currency: "GBP" },
-            buyer_payment_instrument_ids: ["complimentary-bsg-" + ref.toLowerCase()],
-            reference_id: ref
-          }
-        }
-      });
-    } catch (err) {
-      return jsonResponse({ error: "Gift card activation failed: " + err.message }, 500);
-    }
-
-    // Step 4: Link to customer
-    try {
-      await sq(token, "POST", `/gift-cards/${gcId}/link-customer`, { customer_id: customerId });
-    } catch (err) {
-      // Non-fatal — log but continue
-      console.warn("Link customer failed (non-fatal):", err.message);
-    }
-
-    // Step 5: Send email
-    const fmtGAN = gan.replace(/(\d{4})(?=\d)/g, "$1 ");
-    const donor  = sponsorName || "Boomers & Swingers";
-    try {
-      await fetch("https://api.web3forms.com/submit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          access_key: env.WEB3FORMS_KEY,
-          from_name: "Boomers & Swingers",
-          to: email,
-          name: `${firstName} ${lastName}`,
-          subject: "Your free session — Boomers & Swingers",
-          message: [
-            "Session confirmed!",
-            `Square gift card: ${fmtGAN}`,
-            `Balance: £${(amount / 100).toFixed(2)}`,
-            `Reference: ${ref}`,
-            expiry || "See terms",
-            "",
-            "Venue: Manchester Rd, Astley M29 7EJ",
-            "Show gift card number to staff. No booking needed.",
-            "",
-            `Donated by ${donor}`
-          ].join("\n"),
-          mobile: phone,
-          postcode,
-          reference: ref,
-          gift_card: gan,
-          source: slug || "ccn",
-          planned_visit: plannedVisit || "",
-          bs_consent: bsConsent ? "yes" : "no",
-          sponsor_consent: sponsorConsent ? "yes" : "no"
-        })
-      });
-    } catch (err) {
-      // Non-fatal — gift card is created, email failed
-      console.warn("Email failed (non-fatal):", err.message);
-    }
-
-    // Success
-    return jsonResponse({
-      success:    true,
-      gan:        fmtGAN,
-      reference:  ref,
-      customerId,
-      balance:    `£${(amount / 100).toFixed(2)}`
-    });
-
+    // Increment claimed counter atomically
+    await env.CCN_KV.put("claimed:" + slug, String(claimed + 1));
   } catch (err) {
-    return jsonResponse({ error: "Unexpected error: " + err.message }, 500);
+    return jsonResponse({ error: "Queue error: " + err.message }, 500);
   }
+
+  const fmtGAN = gan.replace(/(\d{4})(?=\d)/g, "$1 ");
+  const token = env.SQUARE_TOKEN;
+  const locationId = env.SQUARE_LOCATION || "LDQSQ4YZX7YS0";
+
+  // Create or find Square customer
+  let customerId;
+  try {
+    customerId = await findOrCreateCustomer(token, { firstName, lastName, email, phone, postcode, slug, ref });
+  } catch (err) {
+    // Non-fatal — log and continue
+    console.warn("Customer step failed (non-fatal):", err.message);
+  }
+
+  // Link gift card to customer if we have their ID
+  if (customerId) {
+    try {
+      await sq(token, "POST", "/gift-cards/link-customer", {
+        customer_id: customerId,
+        gift_card_gan: gan
+      });
+    } catch (err) {
+      console.warn("Gift card link failed (non-fatal):", err.message);
+    }
+  }
+
+  // Send confirmation email
+  const donor = sponsorName || sponsor.name;
+  const expiryTxt = expiry || sponsor.expiry;
+  try {
+    await fetch("https://api.web3forms.com/submit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        access_key: env.WEB3FORMS_KEY,
+        from_name: "Boomers & Swingers",
+        to: email,
+        name: `${firstName} ${lastName}`,
+        subject: "Your free session — Boomers & Swingers",
+        message: [
+          "Session confirmed!",
+          "",
+          `Square gift card: ${fmtGAN}`,
+          `Balance: ${sponsor.amount}`,
+          `Reference: ${ref}`,
+          expiryTxt,
+          "",
+          "Venue: Manchester Rd, Astley M29 7EJ",
+          "Show gift card number to staff at the till.",
+          "No booking needed.",
+          "",
+          `Donated by ${donor}`
+        ].join("\n"),
+        mobile: phone,
+        postcode,
+        reference: ref,
+        gift_card: gan,
+        source: slug || "ccn",
+        planned_visit: plannedVisit || "",
+        bs_consent: bsConsent ? "yes" : "no",
+        sponsor_consent: sponsorConsent ? "yes" : "no"
+      })
+    });
+  } catch (err) {
+    console.warn("Email failed (non-fatal):", err.message);
+  }
+
+  return jsonResponse({
+    success: true,
+    gan: fmtGAN,
+    reference: ref,
+    customerId: customerId || null,
+    balance: sponsor.amount
+  });
 }
 
 async function findOrCreateCustomer(token, { firstName, lastName, email, phone, postcode, slug, ref }) {
@@ -201,10 +222,10 @@ async function findOrCreateCustomer(token, { firstName, lastName, email, phone, 
     phone_number: phone,
     address: { postal_code: postcode, country: "GB" },
     reference_id: ref,
-    note: `CCN claimant · ${slug} · ${new Date().toISOString().slice(0, 10)}`,
+    note: `CCN claimant · ${slug} · ${new Date().toISOString().slice(0, 10)}`
   });
 
-  if (!created.customer) throw new Error("Customer creation returned no customer: " + JSON.stringify(created));
+  if (!created.customer) throw new Error("Customer creation returned no customer");
   return created.customer.id;
 }
 
@@ -212,34 +233,26 @@ async function sq(token, method, path, body) {
   const res = await fetch(SQUARE + path, {
     method,
     headers: {
-      "Authorization":  "Bearer " + token,
-      "Content-Type":   "application/json",
+      "Authorization": "Bearer " + token,
+      "Content-Type": "application/json",
       "Square-Version": "2024-01-18"
     },
     body: body ? JSON.stringify(body) : undefined
   });
-
   const text = await res.text();
   let data;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    throw new Error(`Square returned non-JSON (${res.status}): ${text.slice(0, 200)}`);
+  try { data = JSON.parse(text); }
+  catch { throw new Error(`Square non-JSON (${res.status}): ${text.slice(0, 200)}`); }
+  if (!res.ok) {
+    const msg = data.errors ? JSON.stringify(data.errors) : `HTTP ${res.status}`;
+    throw new Error(msg);
   }
-
- if (!res.ok) {
-  const msg = data.errors
-    ? JSON.stringify(data.errors)
-    : `HTTP ${res.status}: ${text.slice(0, 300)}`;
-  throw new Error(msg);
-}
-
   return data;
 }
 
 function corsHeaders() {
   return {
-    "Access-Control-Allow-Origin":  "*",
+    "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type"
   };
@@ -248,10 +261,7 @@ function corsHeaders() {
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: {
-      "Content-Type": "application/json",
-      ...corsHeaders()
-    }
+    headers: { "Content-Type": "application/json", ...corsHeaders() }
   });
 }
 
@@ -327,15 +337,13 @@ input::placeholder{color:var(--muted)}
 </head>
 <body>
 <div class="wrap">
-
-<!-- Step 1: Landing -->
 <div id="s1">
   <div class="hero">
     <div class="badge"><div class="dot"></div><span id="bt">Giveaway drop</span></div>
     <h1>FREE<span id="ha">SESSION</span></h1>
     <p class="sub" id="hs">50 free balls at Boomers &amp; Swingers Driving Range, Astley</p>
     <div class="stats">
-      <div class="stat"><div class="stat-n" id="sr">0</div><div class="stat-l">Claimed</div></div>
+      <div class="stat"><div class="stat-n" id="sr">-</div><div class="stat-l">Claimed</div></div>
       <div class="stat"><div class="stat-n" id="sm">-</div><div class="stat-l">Available</div></div>
       <div class="stat"><div class="stat-n" id="sd">-</div><div class="stat-l">Days left</div></div>
     </div>
@@ -358,8 +366,6 @@ input::placeholder{color:var(--muted)}
   <button class="cta" onclick="go(2)">Claim my free session →</button>
   <p class="exp" id="en"></p>
 </div>
-
-<!-- Step 2: Form -->
 <div id="s2" class="hidden">
   <div class="hero" style="padding-top:32px">
     <div class="badge"><div class="dot"></div><span>Almost there</span></div>
@@ -390,8 +396,6 @@ input::placeholder{color:var(--muted)}
   </div>
   <p class="foot"><a href="javascript:void(0)" onclick="go(1)">← Back</a> · <a href="https://www.boomersandswingers.golf/privacy-policy" target="_blank">Privacy policy</a></p>
 </div>
-
-<!-- Step 3: Confirmation -->
 <div id="s3" class="hidden">
   <div class="hero" style="padding-top:32px">
     <div class="badge"><div class="dot"></div><span>✓ Confirmed</span></div>
@@ -402,7 +406,7 @@ input::placeholder{color:var(--muted)}
   <div class="card">
     <div class="ch">📋 Summary</div>
     <div class="cb" style="font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:10px">
-      <div style="display:flex;justify-content:space-between"><span>Donated by</span><b style="color:var(--text)" id="cs">Boomers &amp; Swingers</b></div>
+      <div style="display:flex;justify-content:space-between"><span>Donated by</span><b style="color:var(--text)" id="cs">-</b></div>
       <div style="display:flex;justify-content:space-between"><span>Reference</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px" id="cr">-</span></div>
       <div style="display:flex;justify-content:space-between"><span>Balance</span><b style="color:var(--green)">£6.50</b></div>
     </div>
@@ -410,108 +414,63 @@ input::placeholder{color:var(--muted)}
   <div class="vbox">📍 Manchester Rd, Astley M29 7EJ<br>📱 Show gift card number to staff at the till<br>🕐 Mon–Fri 1–9pm | Sat–Sun 10am–5pm<br>⭐ No booking needed</div>
   <div style="margin-top:14px" class="foot"><a href="https://www.boomersandswingers.golf" target="_blank">boomersandswingers.golf</a></div>
 </div>
-
 </div>
 <script>
 const SP={
-  "tylersmithgolf":{n:"Boomers & Swingers",b:"Tyler Smith Golf × B&S Drop",h:"DROP",s:"50 free balls · for @tylersmithgolf_ followers · Astley",st:'Gifted by <b>Boomers &amp; Swingers</b> for followers of @tylersmithgolf_ on Instagram.',e:"Expires midnight 7 Apr 2026",m:10,r:0,d:1,fh:"🎁 For @tylersmithgolf_ followers",c2:"<b>B&S offers</b> — happy to hear about future sessions."},
+  "tylersmithgolf":{n:"Boomers & Swingers",b:"Tyler Smith Golf × B&S Drop",h:"DROP",s:"50 free balls · for @tylersmithgolf_ followers · Astley",st:'Gifted by <b>Boomers &amp; Swingers</b> for @tylersmithgolf_ followers.',e:"Expires midnight 9 Apr 2026",m:10,r:0,d:3,fh:"🎁 For @tylersmithgolf_ followers",c2:"<b>B&S offers</b> — happy to hear about future sessions."},
   "gildrew":{n:"Gildrew",b:"Community Champion · Gildrew",h:"SESSION",s:"50 free balls · Donated by Gildrew · Astley",st:'Gifted by <b>Gildrew</b> — supporting the local community.',e:"Valid until 31 Dec 2026",m:60,r:34,d:269,fh:"🎁 Gifted by Gildrew",c2:"<b>Gildrew offers</b> — happy to share my details with Gildrew."},
   "adl-scaffold":{n:"ADL Scaffold",b:"Community Champion · ADL Scaffold",h:"SESSION",s:"50 free balls · Donated by ADL Scaffold · Astley",st:'Gifted by <b>ADL Scaffold</b>.',e:"Valid until 31 Mar 2027",m:60,r:12,d:359,fh:"🎁 Gifted by ADL Scaffold",c2:"<b>ADL Scaffold offers</b> — happy to share my details with ADL Scaffold."},
   "honest-fuel":{n:"Honest Fuel",b:"Community Champion · Honest Fuel",h:"SESSION",s:"50 free balls · Donated by Honest Fuel · Astley",st:'Gifted by <b>Honest Fuel</b>.',e:"Valid until 30 Apr 2027",m:60,r:8,d:389,fh:"🎁 Gifted by Honest Fuel",c2:"<b>Honest Fuel offers</b> — happy to share my details with Honest Fuel."}
 };
-
-const slug = new URLSearchParams(location.search).get("s") || "";
-const sp   = SP[slug];
-
-window.addEventListener("DOMContentLoaded", () => {
-  if (!sp) {
-    document.querySelector(".wrap").innerHTML = '<div style="text-align:center;padding:80px 20px"><h1 style="font-family:Bebas Neue,sans-serif;color:var(--green);font-size:48px">⛳</h1><p style="color:var(--muted);margin-top:12px">Visit <a href="https://www.boomersandswingers.golf" style="color:var(--green)">boomersandswingers.golf</a> for your sponsor link.</p></div>';
-    return;
-  }
-  document.title = "Free Session — " + sp.n;
-  document.getElementById("bt").textContent = sp.b;
-  document.getElementById("ha").textContent = sp.h;
-  document.getElementById("hs").textContent = sp.s;
-  document.getElementById("st").innerHTML  = sp.st;
-  document.getElementById("sr").textContent = sp.r;
-  document.getElementById("sm").textContent = sp.m - sp.r;
-  document.getElementById("sd").textContent = sp.d;
-  document.getElementById("en").textContent = sp.e + " · One per person · Astley";
-  document.getElementById("fh").textContent = sp.fh;
-  document.getElementById("c2l").innerHTML  = sp.c2;
-  document.getElementById("cs").textContent = sp.n;
+const slug=new URLSearchParams(location.search).get("s")||"";
+const sp=SP[slug];
+window.addEventListener("DOMContentLoaded",()=>{
+  if(!sp){document.querySelector(".wrap").innerHTML='<div style="text-align:center;padding:80px 20px"><h1 style="font-family:Bebas Neue,sans-serif;color:var(--green);font-size:48px">⛳</h1><p style="color:var(--muted);margin-top:12px">Visit <a href="https://www.boomersandswingers.golf" style="color:var(--green)">boomersandswingers.golf</a> for your sponsor link.</p></div>';return;}
+  document.title="Free Session — "+sp.n;
+  document.getElementById("bt").textContent=sp.b;
+  document.getElementById("ha").textContent=sp.h;
+  document.getElementById("hs").textContent=sp.s;
+  document.getElementById("st").innerHTML=sp.st;
+  document.getElementById("sr").textContent=sp.r;
+  document.getElementById("sm").textContent=sp.m-sp.r;
+  document.getElementById("sd").textContent=sp.d;
+  document.getElementById("en").textContent=sp.e+" · One per person · Astley";
+  document.getElementById("fh").textContent=sp.fh;
+  document.getElementById("c2l").innerHTML=sp.c2;
+  document.getElementById("cs").textContent=sp.n;
 });
-
-function go(n) {
-  document.getElementById("s1").style.display = n === 1 ? "" : "none";
-  document.getElementById("s2").className = n === 2 ? "" : "hidden";
-  document.getElementById("s3").className = n === 3 ? "" : "hidden";
-  document.getElementById("err").style.display = "none";
-  window.scrollTo(0, 0);
+function go(n){
+  document.getElementById("s1").style.display=n===1?"":"none";
+  document.getElementById("s2").className=n===2?"":"hidden";
+  document.getElementById("s3").className=n===3?"":"hidden";
+  document.getElementById("err").style.display="none";
+  window.scrollTo(0,0);
 }
-window.go = go;
-
-function showErr(msg) {
-  const el = document.getElementById("err");
-  el.textContent = msg;
-  el.style.display = "block";
-}
-
-async function sub() {
-  const f1 = document.getElementById("f1").value.trim();
-  const f2 = document.getElementById("f2").value.trim();
-  const f3 = document.getElementById("f3").value.trim();
-  const f4 = document.getElementById("f4").value.trim();
-  const f5 = document.getElementById("f5").value.trim();
-
-  if (!f1 || !f3 || !f4 || !f5) {
-    showErr("Please fill in all required fields (marked with *).");
-    return;
-  }
-
-  const rn  = Math.floor(Math.random() * 9000 + 1000);
-  const ref = "CCN-" + slug.slice(0, 3).toUpperCase() + "-" + rn;
-  const btn = document.getElementById("sb");
-  btn.disabled = true;
-  btn.textContent = "Creating your gift card…";
-  document.getElementById("err").style.display = "none";
-
-  try {
-    const res = await fetch("/api", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        firstName: f1, lastName: f2, email: f3, phone: f4, postcode: f5,
-        plannedVisit:   document.getElementById("f6").value.trim(),
-        bsConsent:      document.getElementById("c1").checked,
-        sponsorConsent: document.getElementById("c2").checked,
-        slug, reference: ref, sponsorName: sp?.n, expiry: sp?.e
-      })
-    });
-
+window.go=go;
+function showErr(msg){const el=document.getElementById("err");el.textContent=msg;el.style.display="block";}
+async function sub(){
+  const f1=document.getElementById("f1").value.trim(),f2=document.getElementById("f2").value.trim(),f3=document.getElementById("f3").value.trim(),f4=document.getElementById("f4").value.trim(),f5=document.getElementById("f5").value.trim();
+  if(!f1||!f3||!f4||!f5){showErr("Please fill in all required fields (marked with *).");return;}
+  const rn=Math.floor(Math.random()*9000+1000);
+  const ref="CCN-"+slug.slice(0,3).toUpperCase()+"-"+rn;
+  const btn=document.getElementById("sb");
+  btn.disabled=true;btn.textContent="Sending your gift card…";
+  document.getElementById("err").style.display="none";
+  try{
+    const res=await fetch("/api",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({firstName:f1,lastName:f2,email:f3,phone:f4,postcode:f5,plannedVisit:document.getElementById("f6").value.trim(),bsConsent:document.getElementById("c1").checked,sponsorConsent:document.getElementById("c2").checked,slug,reference:ref,sponsorName:sp?.n,expiry:sp?.e})});
     let data;
-    try {
-      data = await res.json();
-    } catch {
-      throw new Error("Server returned an invalid response. Please try again.");
-    }
-
-    if (!res.ok || data.error) {
-      throw new Error(data.error || "Something went wrong (HTTP " + res.status + ")");
-    }
-
-    document.getElementById("gd").textContent = data.gan || ref;
-    document.getElementById("ge").textContent = (sp?.e || "") + " · Single use · Show to staff";
-    document.getElementById("cr").textContent = data.reference || ref;
+    try{data=await res.json();}catch{throw new Error("Server returned an invalid response. Please try again.");}
+    if(!res.ok||data.error)throw new Error(data.error||"Something went wrong (HTTP "+res.status+")");
+    document.getElementById("gd").textContent=data.gan||ref;
+    document.getElementById("ge").textContent=(sp?.e||"")+" · Single use · Show to staff";
+    document.getElementById("cr").textContent=data.reference||ref;
     go(3);
-
-  } catch (err) {
-    showErr(err.message || "An error occurred. Please try again.");
-    btn.disabled = false;
-    btn.textContent = "Get my gift card →";
+  }catch(err){
+    showErr(err.message||"An error occurred. Please try again.");
+    btn.disabled=false;btn.textContent="Get my gift card →";
   }
 }
-window.sub = sub;
+window.sub=sub;
 </script>
 </body>
 </html>`;
