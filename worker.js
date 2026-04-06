@@ -227,10 +227,12 @@ async function sq(token, method, path, body) {
     throw new Error(`Square returned non-JSON (${res.status}): ${text.slice(0, 200)}`);
   }
 
-  if (!res.ok) {
-    const msg = data.errors?.map(e => e.detail).join("; ") || `HTTP ${res.status}`;
-    throw new Error(msg);
-  }
+ if (!res.ok) {
+  const msg = data.errors
+    ? JSON.stringify(data.errors)
+    : `HTTP ${res.status}: ${text.slice(0, 300)}`;
+  throw new Error(msg);
+}
 
   return data;
 }
