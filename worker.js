@@ -1,9 +1,9 @@
 /**
- * CCN Freeballs Worker v2
- * - Resend for claimant email (live delivery)
- * - Live counter via /stats endpoint
+ * CCN Freeballs Worker v3
+ * - Screenshot banner + download button on confirmation
+ * - Resend email
+ * - Live counter via /stats
  * - Fixed QR code (\s not s)
- * - KV binding: CCN_KV
  */
 
 const SQUARE = "https://connect.squareup.com/v2";
@@ -96,7 +96,6 @@ async function handleAPI(request, env) {
   const donor = sponsorName || sponsor.name;
   const expiryTxt = expiry || sponsor.expiry;
 
-  // Square customer
   let customerId;
   try {
     customerId = await findOrCreateCustomer(token, { firstName, lastName, email, phone, postcode, slug, ref });
@@ -108,9 +107,8 @@ async function handleAPI(request, env) {
     } catch (err) { console.warn("Link (non-fatal):", err.message); }
   }
 
-  // Email claimant via Resend
   try {
-    const emailRes = await fetch("https://api.resend.com/emails", {
+    await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { "Authorization": "Bearer " + env.RESEND_API_KEY, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -130,21 +128,15 @@ async function handleAPI(request, env) {
           "",
           "📍 Manchester Rd, Astley M29 7EJ",
           "🕐 Mon–Fri 1–9pm | Sat–Sun 10am–5pm",
-          "⛳ Show your gift card number (or QR code from the website) to staff at the till.",
-          "No booking needed.",
+          "⛳ Show your gift card number to staff at the till. No booking needed.",
           "",
           `Donated by ${donor}`,
           "",
           "See you on the range!",
-          "Boomers & Swingers",
-          "boomersandswingers.golf"
+          "Boomers & Swingers · boomersandswingers.golf"
         ].join("\n")
       })
     });
-    if (!emailRes.ok) {
-      const errText = await emailRes.text();
-      console.warn("Resend error:", errText);
-    }
   } catch (err) { console.warn("Email (non-fatal):", err.message); }
 
   return jsonResponse({ success: true, gan: fmtGAN, reference: ref, customerId: customerId || null, balance: sponsor.amount });
@@ -205,6 +197,7 @@ function getHTML() {
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{--green:#4ADE80;--dark:#070d07;--card:#111c11;--border:rgba(74,222,128,.18);--text:#e8f5e8;--muted:#6b7a6b}
@@ -255,12 +248,47 @@ input::placeholder{color:var(--muted)}
 .ck input[type=checkbox]{width:15px;height:15px;margin-top:2px;flex-shrink:0;accent-color:var(--green);cursor:pointer}
 .ck label{font-size:12px;color:var(--muted);line-height:1.5;text-transform:none;letter-spacing:0;font-weight:400;cursor:pointer}
 .ck label b{color:var(--text);font-weight:600}
-.gan{background:rgba(74,222,128,.06);border:1px solid var(--border);border-radius:14px;padding:24px;text-align:center;margin-bottom:14px}
+/* Screenshot banner */
+.shot-banner{
+  background:rgba(74,222,128,.15);
+  border:2px solid var(--green);
+  border-radius:12px;
+  padding:12px 16px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:14px;
+}
+.shot-banner-text{
+  display:flex;align-items:center;gap:8px;
+  font-size:14px;font-weight:700;color:var(--green);
+}
+.shot-banner-text span{font-size:20px}
+.shot-banner-sub{font-size:11px;color:var(--muted);margin-top:2px;font-weight:400}
+/* Saveable card */
+.gan{background:var(--card);border:2px solid var(--border);border-radius:16px;padding:24px;text-align:center;margin-bottom:14px}
 .gl{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:12px}
 #qr{margin:0 auto 14px;width:160px;height:160px;background:#fff;padding:8px;border-radius:10px;display:flex;align-items:center;justify-content:center}
 #qr canvas,#qr img{display:block}
-.gn{font-family:'JetBrains Mono',monospace;font-size:clamp(18px,5vw,24px);font-weight:700;color:var(--green);letter-spacing:.12em;margin-bottom:6px}
-.gs{font-size:11px;color:var(--muted)}
+.gn{font-family:'JetBrains Mono',monospace;font-size:clamp(18px,5vw,24px);font-weight:700;color:var(--green);letter-spacing:.12em;margin-bottom:4px}
+.gs{font-size:11px;color:var(--muted);margin-bottom:8px}
+.gan-logo{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.05em}
+/* Download button */
+.dl-btn{
+  width:100%;
+  background:transparent;
+  border:2px solid var(--green);
+  color:var(--green);
+  font-family:'DM Sans',sans-serif;
+  font-size:14px;font-weight:700;
+  padding:13px;border-radius:100px;
+  cursor:pointer;
+  transition:background .15s,color .15s;
+  margin-bottom:14px;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+}
+.dl-btn:hover{background:var(--green);color:var(--dark)}
 .vbox{background:rgba(74,222,128,.04);border:1px solid var(--border);border-radius:12px;padding:14px;font-size:12px;color:var(--muted);line-height:1.9}
 .foot{text-align:center;padding-top:20px;font-size:11px;color:var(--muted)}
 .foot a{color:var(--green);text-decoration:none}
@@ -270,6 +298,8 @@ input::placeholder{color:var(--muted)}
 </head>
 <body>
 <div class="wrap">
+
+<!-- Step 1: Landing -->
 <div id="s1">
   <div class="hero">
     <div class="badge"><div class="dot"></div><span id="bt">Giveaway drop</span></div>
@@ -290,7 +320,7 @@ input::placeholder{color:var(--muted)}
     <div class="cb" style="padding:8px 18px">
       <ul class="steps">
         <li class="step"><div class="sn">1</div><div><b>Fill in your details</b><span>60 seconds — name, email &amp; mobile</span></div></li>
-        <li class="step"><div class="sn">2</div><div><b>Get your unique gift card</b><span>QR code &amp; number emailed instantly</span></div></li>
+        <li class="step"><div class="sn">2</div><div><b>Get your unique gift card</b><span>Screenshot or download your QR code</span></div></li>
         <li class="step"><div class="sn">3</div><div><b>Turn up &amp; play</b><span>Show QR code or gift card number to staff</span></div></li>
       </ul>
     </div>
@@ -299,6 +329,8 @@ input::placeholder{color:var(--muted)}
   <button class="cta" onclick="go(2)">Claim my free session →</button>
   <p class="exp" id="en"></p>
 </div>
+
+<!-- Step 2: Form -->
 <div id="s2" class="hidden">
   <div class="hero" style="padding-top:32px">
     <div class="badge"><div class="dot"></div><span>Almost there</span></div>
@@ -329,18 +361,38 @@ input::placeholder{color:var(--muted)}
   </div>
   <p class="foot"><a href="javascript:void(0)" onclick="go(1)">← Back</a> · <a href="https://www.boomersandswingers.golf/privacy-policy" target="_blank">Privacy policy</a></p>
 </div>
+
+<!-- Step 3: Confirmation -->
 <div id="s3" class="hidden">
   <div class="hero" style="padding-top:32px">
     <div class="badge"><div class="dot"></div><span>✓ Confirmed</span></div>
     <h1 style="font-size:clamp(40px,11vw,64px)">YOU'RE<span>IN!</span></h1>
-    <p class="sub">Your Square gift card has been sent to your inbox.</p>
+    <p class="sub">Your gift card is ready. Screenshot it or download below.</p>
   </div>
-  <div class="gan">
-    <div class="gl">Your Square gift card — scan or show number to staff</div>
+
+  <!-- Screenshot banner -->
+  <div class="shot-banner">
+    <div>
+      <div class="shot-banner-text"><span>📸</span> Screenshot this page!</div>
+      <div class="shot-banner-sub">Or use the download button below to save your gift card</div>
+    </div>
+    <span style="font-size:28px">👇</span>
+  </div>
+
+  <!-- Saveable card -->
+  <div class="gan" id="gan-card">
+    <div class="gl">Your Square gift card</div>
     <div id="qr"></div>
     <div class="gn" id="gd">---- ---- ---- ----</div>
-    <div class="gs" id="ge">Single use · Show QR or number to staff at the range</div>
+    <div class="gs" id="ge">Single use · Show QR or number to staff</div>
+    <div class="gan-logo">⛳ Boomers &amp; Swingers · boomersandswingers.golf</div>
   </div>
+
+  <!-- Download button -->
+  <button class="dl-btn" onclick="dlCard()">
+    <span>⬇</span> Save gift card to phone
+  </button>
+
   <div class="card">
     <div class="ch">📋 Summary</div>
     <div class="cb" style="font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:10px">
@@ -352,7 +404,9 @@ input::placeholder{color:var(--muted)}
   <div class="vbox">📍 Manchester Rd, Astley M29 7EJ<br>📱 Show QR code or gift card number to staff<br>🕐 Mon–Fri 1–9pm | Sat–Sun 10am–5pm<br>⭐ No booking needed</div>
   <div style="margin-top:14px" class="foot"><a href="https://www.boomersandswingers.golf" target="_blank">boomersandswingers.golf</a></div>
 </div>
-</div>
+
+</div><!-- /wrap -->
+
 <script>
 const SP={
   "tylersmithgolf":{n:"Boomers & Swingers",b:"Tyler Smith Golf × B&S Drop",h:"DROP",s:"50 free balls · for @tylersmithgolf_ followers · Astley",st:'Gifted by <b>Boomers &amp; Swingers</b> for @tylersmithgolf_ followers.',e:"Expires midnight 9 Apr 2026",d:3,fh:"🎁 For @tylersmithgolf_ followers",c2:"<b>B&S offers</b> — happy to hear about future sessions."},
@@ -362,6 +416,7 @@ const SP={
 };
 const slug=new URLSearchParams(location.search).get("s")||"";
 const sp=SP[slug];
+
 window.addEventListener("DOMContentLoaded",async()=>{
   if(!sp){document.querySelector(".wrap").innerHTML='<div style="text-align:center;padding:80px 20px"><h1 style="font-family:Bebas Neue,sans-serif;color:var(--green);font-size:48px">⛳</h1><p style="color:var(--muted);margin-top:12px">Visit <a href="https://www.boomersandswingers.golf" style="color:var(--green)">boomersandswingers.golf</a> for your sponsor link.</p></div>';return;}
   document.title="Free Session — "+sp.n;
@@ -374,7 +429,6 @@ window.addEventListener("DOMContentLoaded",async()=>{
   document.getElementById("fh").textContent=sp.fh;
   document.getElementById("c2l").innerHTML=sp.c2;
   document.getElementById("cs").textContent=sp.n;
-  // Live counter from KV
   try{
     const r=await fetch("/stats?s="+slug);
     const d=await r.json();
@@ -385,6 +439,7 @@ window.addEventListener("DOMContentLoaded",async()=>{
     document.getElementById("sm").textContent="?";
   }
 });
+
 function go(n){
   document.getElementById("s1").style.display=n===1?"":"none";
   document.getElementById("s2").className=n===2?"":"hidden";
@@ -393,7 +448,34 @@ function go(n){
   window.scrollTo(0,0);
 }
 window.go=go;
+
 function showErr(msg){const el=document.getElementById("err");el.textContent=msg;el.style.display="block";}
+
+// Download gift card as image
+async function dlCard(){
+  const btn=document.querySelector(".dl-btn");
+  const orig=btn.innerHTML;
+  btn.innerHTML="<span>⏳</span> Saving…";
+  btn.disabled=true;
+  try{
+    const canvas=await html2canvas(document.getElementById("gan-card"),{
+      backgroundColor:"#111c11",
+      scale:2,
+      useCORS:true,
+      logging:false
+    });
+    const link=document.createElement("a");
+    link.download="boomers-gift-card.png";
+    link.href=canvas.toDataURL("image/png");
+    link.click();
+  }catch(e){
+    alert("Screenshot didn't work — please screenshot the page manually.");
+  }
+  btn.innerHTML=orig;
+  btn.disabled=false;
+}
+window.dlCard=dlCard;
+
 async function sub(){
   const f1=document.getElementById("f1").value.trim(),f2=document.getElementById("f2").value.trim(),f3=document.getElementById("f3").value.trim(),f4=document.getElementById("f4").value.trim(),f5=document.getElementById("f5").value.trim();
   if(!f1||!f3||!f4||!f5){showErr("Please fill in all required fields (marked with *).");return;}
@@ -407,6 +489,7 @@ async function sub(){
     let data;
     try{data=await res.json();}catch{throw new Error("Server returned an invalid response. Please try again.");}
     if(!res.ok||data.error)throw new Error(data.error||"Something went wrong (HTTP "+res.status+")");
+    // Build QR code
     const rawGAN=(data.gan||ref).replace(/\s/g,"");
     document.getElementById("qr").innerHTML="";
     new QRCode(document.getElementById("qr"),{width:144,height:144,text:rawGAN,colorDark:"#070d07",colorLight:"#ffffff"});
