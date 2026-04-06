@@ -423,7 +423,7 @@ input::placeholder{color:var(--muted)}
 </div>
 <script>
 const SP={
-  "tylersmithgolf":{n:"Boomers & Swingers",b:"Tyler Smith Golf × B&S Drop",h:"DROP",s:"50 free balls · for @tylersmithgolf_ followers · Astley",st:'Gifted by <b>Boomers &amp; Swingers</b> for @tylersmithgolf_ followers.',e:"Expires midnight 9 Apr 2026",m:10,r:0,d:3,fh:"🎁 For @tylersmithgolf_ followers",c2:"<b>B&S offers</b> — happy to hear about future sessions."},
+  "tylersmithgolf":{n:"Boomers & Swingers",b:"Tyler Smith Golf × B&S Drop",h:"DROP",s:"50 free balls · for @tylersmithgolf_ followers · Astley",st:'Gifted by <b>Boomers &amp; Swingers</b> for @tylersmithgolf_ followers.',e:"Expires midnight 9 Apr 2026",m:16,r:0,d:3,fh:"🎁 For @tylersmithgolf_ followers",c2:"<b>B&S offers</b> — happy to hear about future sessions."},
   "gildrew":{n:"Gildrew",b:"Community Champion · Gildrew",h:"SESSION",s:"50 free balls · Donated by Gildrew · Astley",st:'Gifted by <b>Gildrew</b> — supporting the local community.',e:"Valid until 31 Dec 2026",m:60,r:34,d:269,fh:"🎁 Gifted by Gildrew",c2:"<b>Gildrew offers</b> — happy to share my details with Gildrew."},
   "adl-scaffold":{n:"ADL Scaffold",b:"Community Champion · ADL Scaffold",h:"SESSION",s:"50 free balls · Donated by ADL Scaffold · Astley",st:'Gifted by <b>ADL Scaffold</b>.',e:"Valid until 31 Mar 2027",m:60,r:12,d:359,fh:"🎁 Gifted by ADL Scaffold",c2:"<b>ADL Scaffold offers</b> — happy to share my details with ADL Scaffold."},
   "honest-fuel":{n:"Honest Fuel",b:"Community Champion · Honest Fuel",h:"SESSION",s:"50 free balls · Donated by Honest Fuel · Astley",st:'Gifted by <b>Honest Fuel</b>.',e:"Valid until 30 Apr 2027",m:60,r:8,d:389,fh:"🎁 Gifted by Honest Fuel",c2:"<b>Honest Fuel offers</b> — happy to share my details with Honest Fuel."}
