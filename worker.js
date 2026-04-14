@@ -1,9 +1,9 @@
 /**
- * CCN Freeballs Worker v5
- * - Gildrew: 10 GANs loaded (10 more coming in next update)
- * - Bibby Hygiene: NEW sponsor (20 GANs coming in next update)
- * - ADL Scaffold: REMOVED
- * - Honest Fuel: REMOVED
+ * CCN Freeballs Worker v5-final
+ * Sponsors:
+ *   tylersmithgolf  - 16 GANs
+ *   gildrew         - 0 GANs (cards moved to Bibby Hygiene)
+ *   bibby-hygiene   - 30 GANs (20 from Gildrew + 10 Bibby)
  */
 
 const SQUARE = "https://connect.squareup.com/v2";
@@ -23,18 +23,23 @@ const SPONSORS = {
   "gildrew": {
     name: "Gildrew",
     expiry: "Valid until 31 Dec 2026",
-    amount: "£6.50", total: 10,
-    gans: [
-      "7783323361535960","7783320879486504","7783328352523289","7783322971418187",
-      "7783321042566172","7783326097671744","7783321182375673","7783325477479611",
-      "7783329046484912","7783325995144655"
-    ]
+    amount: "£6.50", total: 0,
+    gans: []
   },
   "bibby-hygiene": {
     name: "Bibby Hygiene",
     expiry: "Valid until 31 Dec 2026",
-    amount: "£6.50", total: 20,
-    gans: []
+    amount: "£6.50", total: 30,
+    gans: [
+      "7783323361535960","7783320879486504","7783328352523289","7783322971418187",
+      "7783321042566172","7783326097671744","7783321182375673","7783325477479611",
+      "7783329046484912","7783325995144655","7783324688354572","7783323444254407",
+      "7783328623383687","7783323493354223","7783324492011855","7783323077090516",
+      "7783327000850060","7783323489573752","7783322125221040","7783320447643032",
+      "7783328010961665","7783326308389052","7783328089468741","7783321287794612",
+      "7783326417946560","7783326267639182","7783326817124719","7783325502066953",
+      "7783327125991005","7783326745271426"
+    ]
   }
 };
 
@@ -117,7 +122,7 @@ async function handleAdmin(request, env) {
 
 function loginHTML(slug) {
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CCN Admin</title>
-<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'DM Sans',sans-serif;background:#070d07;color:#e8f5e8;min-height:100vh;display:flex;align-items:center;justify-content:center}
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:sans-serif;background:#070d07;color:#e8f5e8;min-height:100vh;display:flex;align-items:center;justify-content:center}
 .box{background:#111c11;border:1px solid rgba(74,222,128,.18);border-radius:16px;padding:40px;width:100%;max-width:360px;text-align:center}
 h1{font-size:24px;color:#4ADE80;margin-bottom:8px}p{color:#6b7a6b;font-size:14px;margin-bottom:24px}
 input{width:100%;padding:12px 14px;background:rgba(74,222,128,.04);border:1px solid rgba(74,222,128,.18);border-radius:10px;color:#e8f5e8;font-size:14px;outline:none;margin-bottom:14px}
@@ -134,14 +139,13 @@ function adminHTML(rows, stats, slug, pw) {
   const active = rows.filter(r => r.status === "ACTIVE").length;
   const sponsorTabs = Object.entries(SPONSORS).map(([s, sp]) => {
     const isActive = slug === s;
-    return `<a href="/admin?pw=${pw}&s=${s}" style="display:inline-block;padding:7px 16px;border-radius:100px;font-size:12px;font-weight:600;text-decoration:none;margin-right:6px;margin-bottom:6px;background:${isActive ? "#4ADE80" : "rgba(74,222,128,.08)"};color:${isActive ? "#070d07" : "#4ADE80"};border:1px solid ${isActive ? "#4ADE80" : "rgba(74,222,128,.2)"}">
+    return `<a href="/admin?pw=${pw}&s=${s}" style="display:inline-block;padding:7px 16px;border-radius:100px;font-size:12px;font-weight:600;text-decoration:none;margin-right:6px;margin-bottom:6px;background:${isActive?"#4ADE80":"rgba(74,222,128,.08)"};color:${isActive?"#070d07":"#4ADE80"};border:1px solid ${isActive?"#4ADE80":"rgba(74,222,128,.2)"}">
       ${sp.name} ${stats[s] ? `(${stats[s].claimed}/${stats[s].total})` : ""}</a>`;
   }).join("");
   const rowsHTML = rows.length === 0
     ? `<tr><td colspan="9" style="text-align:center;color:#6b7a6b;padding:40px">No claimants yet</td></tr>`
     : rows.map(r => `<tr>
-        <td>${r.date}</td>
-        <td><b style="color:#e8f5e8">${r.name}</b></td>
+        <td>${r.date}</td><td><b style="color:#e8f5e8">${r.name}</b></td>
         <td><a href="mailto:${r.email}" style="color:#4ADE80;text-decoration:none">${r.email}</a></td>
         <td>${r.phone}</td><td>${r.postcode}</td>
         <td style="color:#6b7a6b;font-size:12px">${r.sponsor}</td>
@@ -150,7 +154,7 @@ function adminHTML(rows, stats, slug, pw) {
         <td><span style="display:inline-block;padding:3px 10px;border-radius:100px;font-size:11px;font-weight:700;background:${r.status==="REDEEMED"?"rgba(239,68,68,.15)":r.status==="ACTIVE"?"rgba(74,222,128,.15)":"rgba(107,122,107,.15)"};color:${r.status==="REDEEMED"?"#f87171":r.status==="ACTIVE"?"#4ADE80":"#6b7a6b"}">${r.status}</span></td>
       </tr>`).join("");
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CCN Admin</title>
-<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;600&display=swap" rel="stylesheet">
 <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'DM Sans',sans-serif;background:#070d07;color:#e8f5e8;min-height:100vh}
 body::after{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(74,222,128,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(74,222,128,.03) 1px,transparent 1px);background-size:48px 48px;pointer-events:none;z-index:0}
 .wrap{position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:32px 20px 60px}
@@ -175,7 +179,7 @@ tr:hover td{background:rgba(74,222,128,.03)}
     <div class="card"><div class="card-n">${rows.length}</div><div class="card-l">Total claimants</div></div>
     <div class="card"><div class="card-n" style="color:#4ADE80">${active}</div><div class="card-l">Active (unused)</div></div>
     <div class="card"><div class="card-n" style="color:#f87171">${redeemed}</div><div class="card-l">Redeemed</div></div>
-    ${Object.entries(stats).map(([s,st])=>`<div class="card"><div class="card-n">${st.claimed}</div><div class="card-l">${st.name} claimed</div></div>`).join("")}
+    ${Object.entries(stats).filter(([,st])=>st.total>0).map(([s,st])=>`<div class="card"><div class="card-n">${st.claimed}</div><div class="card-l">${st.name} claimed</div></div>`).join("")}
   </div>
   <div class="tabs"><a href="/admin?pw=${pw}" class="all-tab">All sponsors</a>${sponsorTabs}</div>
   <div class="table-wrap"><table>
@@ -223,7 +227,7 @@ async function handleAPI(request, env) {
       method: "POST",
       headers: { "Authorization": "Bearer " + env.RESEND_API_KEY, "Content-Type": "application/json" },
       body: JSON.stringify({
-       from: "Boomers & Swingers <hello@boomersandswingers.golf>",
+        from: "Boomers & Swingers <onboarding@resend.dev>",
         to: [email], cc: ["nick@boomersandswingers.golf"],
         subject: "Your free session — Boomers & Swingers ⛳",
         text: [`Hi ${firstName},`,"","Your free 50-ball session is confirmed!","",`Square gift card: ${fmtGAN}`,`Balance: ${sponsor.amount}`,`Reference: ${ref}`,expiryTxt,"","📍 Manchester Rd, Astley M29 7EJ","🕐 Mon–Fri 1–9pm | Sat–Sun 10am–5pm","⛳ Show your gift card number to staff at the till. No booking needed.",``,`Donated by ${donor}`,"","See you on the range!","Boomers & Swingers · boomersandswingers.golf"].join("\n")
@@ -298,13 +302,11 @@ h1 span{color:var(--green);display:block}
 .sbanner{background:rgba(74,222,128,.05);border:1px solid var(--border);border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:10px;margin-bottom:14px;font-size:12px;color:var(--muted);line-height:1.5}.sbanner b{color:var(--text)}
 .cta{width:100%;background:var(--green);color:var(--dark);font-family:'DM Sans',sans-serif;font-size:15px;font-weight:700;padding:16px;border:none;border-radius:100px;cursor:pointer;transition:transform .15s,opacity .15s;margin-bottom:8px}
 .cta:hover{transform:translateY(-1px);opacity:.92}.cta:disabled{background:#2a3a2a;color:var(--muted);cursor:not-allowed;transform:none}
-.exp{text-align:center;font-size:11px;color:var(--muted);padding:4px 0}
-.hidden{display:none}
+.exp{text-align:center;font-size:11px;color:var(--muted);padding:4px 0}.hidden{display:none}
 .fr{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
 label{display:block;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:5px}
 input[type=text],input[type=email],input[type=tel]{width:100%;background:rgba(74,222,128,.04);border:1px solid var(--border);border-radius:10px;padding:11px 14px;font-family:'DM Sans',sans-serif;font-size:14px;color:var(--text);outline:none;transition:border-color .15s}
-input:focus{border-color:rgba(74,222,128,.5)}input::placeholder{color:var(--muted)}
-.mb{margin-bottom:12px}
+input:focus{border-color:rgba(74,222,128,.5)}input::placeholder{color:var(--muted)}.mb{margin-bottom:12px}
 .cbox{background:rgba(74,222,128,.04);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:14px}
 .ck{display:flex;gap:10px;align-items:flex-start;margin-bottom:10px}.ck:last-child{margin:0}
 .ck input[type=checkbox]{width:15px;height:15px;margin-top:2px;flex-shrink:0;accent-color:var(--green);cursor:pointer}
