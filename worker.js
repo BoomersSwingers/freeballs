@@ -227,10 +227,10 @@ async function handleAPI(request, env) {
       method: "POST",
       headers: { "Authorization": "Bearer " + env.RESEND_API_KEY, "Content-Type": "application/json" },
       body: JSON.stringify({
-        from: "Boomers & Swingers <hello@boomersandswingers.golf>",
+        from: "Boomers & Swingers <onboarding@resend.dev>",
         to: [email], cc: ["nick@boomersandswingers.golf"],
         subject: "Your free session — Boomers & Swingers ⛳",
-        text: [`Hi ${firstName},`,"","Your free 50-ball session is confirmed!","",`Square gift card: ${fmtGAN}`,`Balance: ${sponsor.amount}`,`Reference: ${ref}`,expiryTxt,"","📍 Manchester Rd, Astley M29 7EJ","🕐 Mon–Fri 1–9pm | Sat–Sun 10am–5pm","⛳ Show your gift card number to staff at the till. No booking needed.",``,`Donated by ${donor}`,"","See you on the range!","Boomers & Swingers · boomersandswingers.golf"].join("\n")
+        text: [`Hi ${firstName},`,"","Your free 50-ball session is confirmed!","",`Square gift card: ${fmtGAN}`,`Balance: ${sponsor.amount}`,`Reference: ${ref}`,expiryTxt,"","📍 Manchester Rd, Astley M29 7EJ","🕐 Mon 1–9pm | Tues–Sat 10am–9pm | Sun 10am–5pm","📞 WhatsApp: 07902 498380","⛳ Show your gift card number to staff at the till. No booking needed.",``,`Donated by ${donor}`,"","See you on the range!","Boomers & Swingers · boomersandswingers.golf"].join("\n")
       })
     });
   } catch (err) { console.warn("Email:", err.message); }
@@ -415,7 +415,7 @@ input:focus{border-color:rgba(74,222,128,.5)}input::placeholder{color:var(--mute
       <div style="display:flex;justify-content:space-between"><span>Balance</span><b style="color:var(--green)">£6.50</b></div>
     </div>
   </div>
-  <div class="vbox">📍 Manchester Rd, Astley M29 7EJ<br>📱 Show QR code or gift card number to staff<br>🕐 Mon–Fri 1–9pm | Sat–Sun 10am–5pm<br>⭐ No booking needed</div>
+  <div class="vbox">📍 Manchester Rd, Astley M29 7EJ<br>📱 Show QR code or gift card number to staff<br>🕐 Mon 1–9pm | Tues–Sat 10am–9pm | Sun 10am–5pm<br>📞 WhatsApp: 07902 498380<br>⭐ No booking needed</div>
   <div style="margin-top:14px" class="foot"><a href="https://www.boomersandswingers.golf" target="_blank">boomersandswingers.golf</a></div>
 </div>
 </div>
