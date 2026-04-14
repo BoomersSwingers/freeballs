@@ -227,7 +227,7 @@ async function handleAPI(request, env) {
       method: "POST",
       headers: { "Authorization": "Bearer " + env.RESEND_API_KEY, "Content-Type": "application/json" },
       body: JSON.stringify({
-        from: "Boomers & Swingers <onboarding@resend.dev>",
+        from: "Boomers & Swingers <hello@boomersandswingers.golf>",
         to: [email], cc: ["nick@boomersandswingers.golf"],
         subject: "Your free session — Boomers & Swingers ⛳",
         text: [`Hi ${firstName},`,"","Your free 50-ball session is confirmed!","",`Square gift card: ${fmtGAN}`,`Balance: ${sponsor.amount}`,`Reference: ${ref}`,expiryTxt,"","📍 Manchester Rd, Astley M29 7EJ","🕐 Mon–Fri 1–9pm | Sat–Sun 10am–5pm","⛳ Show your gift card number to staff at the till. No booking needed.",``,`Donated by ${donor}`,"","See you on the range!","Boomers & Swingers · boomersandswingers.golf"].join("\n")
